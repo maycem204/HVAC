@@ -1,0 +1,1451 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
+import * as XLSX from "xlsx";
+import {
+  MessageSquare, Calendar, MapPin, Star, Send, ChevronRight, LogOut, Zap,
+  User, Wrench, Phone, Clock, CheckCircle2, Bell, TrendingUp, DollarSign,
+  Users, Plus, X, Check, ArrowRight, Eye, EyeOff, Search, Upload,
+  Edit2, ChevronLeft, AlertCircle, MessageCircle, Mic, MicOff, Navigation,
+  Settings, BanIcon, Tag, Shield, Filter, ThumbsUp, ThumbsDown, RefreshCw,
+  ChevronDown, Pencil, Save, Info,
+} from "lucide-react";
+import api from "../lib/api";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Role = "client" | "technician";
+type View = "home" | "auth" | "location" | "client" | "tech";
+type ClientTab = "chat" | "rdv" | "map";
+type TechTab = "leads" | "tarifs" | "agenda";
+type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
+type PriceDecision = "accept" | "negotiate" | "decline" | null;
+
+interface AppUser { id: number; name: string; email: string; phone: string; address: string; city: string; role: Role; avatar: string; lat?: number; lng?: number; }
+interface ChatMsg { role: "bot" | "user"; text: string; }
+interface UserLocation { lat: number; lng: number; city: string; district: string; }
+
+interface Notification {
+  id: number; type: "lead" | "rdv" | "price" | "rating" | "system" | "reassign";
+  title: string; message: string; time: string; read: boolean;
+}
+
+interface Appointment {
+  id: number; client: string; clientId?: number;
+  technicianId: number; technicianName: string;
+  clientPhone?: string; technicianPhone?: string;
+  date: string; time: string; service: string; faultType?: string;
+  estimatedPrice: number; actualPrice?: number; status: AppointmentStatus;
+  address: string; duration?: string; caseDescription?: string;
+  clientConfirmedPrice?: boolean; rating?: number; feedback?: string;
+}
+
+interface PriceItem { id?: number; service: string; unit: string; price: number; category: string; }
+
+interface Technician {
+  id: number; name: string; specialty: string; specializations: string[];
+  rating: number; reviews: number; distanceKm: number;
+  available: boolean; price: string; response: string; tags: string[];
+  avatar: string; color: string; lat: number; lng: number;
+}
+
+interface BlockedSlot {
+  id: number; type: "specific" | "daily" | "weekly";
+  date?: string; weekDays?: number[];
+  startTime: string; endTime: string; label: string;
+}
+
+interface Lead {
+  id: number; client: string; problem: string; price: number; confidence: number;
+  time: string; status: "new" | "accepted" | "done"; city: string; faultType: string;
+}
+
+// ─── Config statique (pas des données métier — restent en dur) ───────────────
+
+const ALL_SPECIALIZATIONS = [
+  "Climatisation", "Réparation", "Remplacement", "Installation",
+  "Chauffage", "Ventilation", "Multi-split", "Maintenance préventive",
+  "Réfrigération", "Pompe à chaleur",
+];
+
+const FAULT_SPECIALIZATION_MAP: Record<string, string[]> = {
+  "Climatisation": ["Climatisation", "Réparation", "Réfrigération", "Multi-split", "Remplacement"],
+  "Chauffage": ["Chauffage", "Pompe à chaleur", "Maintenance préventive"],
+  "Ventilation": ["Ventilation", "Installation"],
+  "Installation": ["Installation", "Multi-split"],
+};
+
+// Le flux conversationnel reste local (UX du chat) ; seul le calcul final du
+// devis part au backend (POST /chat/quote), voir ClientChat.
+const DEMO_CHAT_FLOWS = [
+  { trigger: ["clim","climatiseur","ac ","froid","refroidit","split"], response: "Je comprends — problème de climatisation. Quelle est la marque et l'âge approximatif de votre appareil ?" },
+  { trigger: ["daikin","mitsubishi","samsung","lg","carrier","hitachi"], response: "Merci. L'appareil est-il facilement accessible ? Est-ce urgent ?" },
+  { trigger: ["urgent","urgence","standard","normal","accessible","oui","yes"], response: null as unknown as string, quote: true },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function Avatar({ initials, color, size = "md" }: { initials: string; color: string; size?: "sm" | "md" | "lg" }) {
+  const sz = size === "sm" ? "w-8 h-8 text-xs" : size === "lg" ? "w-12 h-12 text-base" : "w-10 h-10 text-sm";
+  return <div className={`${sz} ${color} rounded-full flex items-center justify-center text-white font-bold shrink-0`}>{initials}</div>;
+}
+
+function Badge({ children, color = "blue" }: { children: React.ReactNode; color?: "blue"|"green"|"amber"|"red"|"gray"|"purple" }) {
+  const s: Record<string,string> = { blue:"bg-blue-50 text-blue-700 border-blue-100", green:"bg-emerald-50 text-emerald-700 border-emerald-100", amber:"bg-amber-50 text-amber-700 border-amber-100", red:"bg-red-50 text-red-700 border-red-100", gray:"bg-gray-50 text-gray-600 border-gray-100", purple:"bg-purple-50 text-purple-700 border-purple-100" };
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${s[color]}`}>{children}</span>;
+}
+
+function ConfidenceBar({ value }: { value: number }) {
+  const color = value >= 75 ? "bg-emerald-500" : value >= 45 ? "bg-amber-500" : "bg-red-400";
+  const label = value >= 75 ? "Élevée" : value >= 45 ? "Moyenne" : "Faible";
+  const tc = value >= 75 ? "text-emerald-600" : value >= 45 ? "text-amber-600" : "text-red-500";
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full ${color} rounded-full`} style={{ width:`${value}%` }}/></div>
+      <span className={`text-xs font-medium ${tc} w-12`}>{label}</span>
+    </div>
+  );
+}
+
+function detectFaultType(messages: ChatMsg[]): string {
+  const text = messages.map((m) => m.text).join(" ").toLowerCase();
+  if (text.match(/clim|climatiseur|ac |froid|refroidit|split/)) return "Climatisation";
+  if (text.match(/chauff|chaudière/)) return "Chauffage";
+  if (text.match(/ventil/)) return "Ventilation";
+  if (text.match(/install/)) return "Installation";
+  return "Climatisation";
+}
+
+// ─── Mappers backend (snake_case) → frontend (camelCase) ─────────────────────
+// Adapte ces mappers si le format réel renvoyé par ton API diffère.
+
+function mapTechnician(row: any): Technician {
+  return {
+    id: row.id ?? row.user_id,
+    name: row.name,
+    specialty: row.specialty ?? (row.specializations ?? []).slice(0, 2).join(" & "),
+    specializations: row.specializations ?? [],
+    rating: Number(row.rating ?? 0),
+    reviews: Number(row.reviews_count ?? row.reviews ?? 0),
+    distanceKm: Number(row.distance_km ?? row.distanceKm ?? 0),
+    available: !!row.available,
+    price: row.price_label ?? row.price ?? "Sur devis",
+    response: row.response_time ?? row.response ?? "—",
+    tags: row.tags ?? [],
+    avatar: row.avatar ?? row.name?.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase(),
+    color: row.color ?? "bg-blue-500",
+    lat: Number(row.lat ?? 0),
+    lng: Number(row.lng ?? 0),
+  };
+}
+
+function mapAppointment(row: any): Appointment {
+  return {
+    id: row.id,
+    client: row.client_name ?? row.client,
+    clientId: row.client_id,
+    technicianId: row.technician_id,
+    technicianName: row.technician_name ?? row.technicianName,
+    clientPhone: row.client_phone,
+    technicianPhone: row.technician_phone,
+    date: row.date,
+    time: row.time,
+    service: row.service,
+    faultType: row.fault_type,
+    estimatedPrice: Number(row.estimated_price ?? 0),
+    actualPrice: row.actual_price != null ? Number(row.actual_price) : undefined,
+    status: row.status,
+    address: row.address,
+    duration: row.duration,
+    caseDescription: row.case_description,
+    clientConfirmedPrice: !!row.client_confirmed_price,
+    rating: row.rating ?? undefined,
+    feedback: row.feedback ?? undefined,
+  };
+}
+
+function mapNotification(row: any): Notification {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    time: row.time ?? new Date(row.created_at).toLocaleString("fr-FR"),
+    read: !!row.read,
+  };
+}
+
+function mapBlockedSlot(row: any): BlockedSlot {
+  return {
+    id: row.id,
+    type: row.type,
+    date: row.date,
+    weekDays: row.week_days ?? row.weekDays,
+    startTime: row.start_time ?? row.startTime,
+    endTime: row.end_time ?? row.endTime,
+    label: row.label,
+  };
+}
+
+function mapLead(row: any): Lead {
+  return {
+    id: row.id,
+    client: row.client_name ?? row.client,
+    problem: row.problem,
+    price: Number(row.price ?? 0),
+    confidence: Number(row.confidence ?? 0),
+    time: row.time ?? new Date(row.created_at).toLocaleString("fr-FR"),
+    status: row.status,
+    city: row.city,
+    faultType: row.fault_type,
+  };
+}
+
+// ─── Speech Recognition ───────────────────────────────────────────────────────
+
+function useSpeechRecognition(onResult: (text: string) => void) {
+  const [isListening, setIsListening] = useState(false);
+  const [supported, setSupported] = useState(false);
+  const recRef = useRef<any>(null);
+  useEffect(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    setSupported(true);
+    const rec = new SR();
+    rec.lang = "fr-FR"; rec.continuous = false; rec.interimResults = false;
+    rec.onresult = (e: any) => onResult(Array.from(e.results as any[]).map((r: any) => r[0].transcript).join(" "));
+    rec.onend = () => setIsListening(false);
+    rec.onerror = () => setIsListening(false);
+    recRef.current = rec;
+  }, []);
+  function toggle() { if (!recRef.current) return; if (isListening) { recRef.current.stop(); setIsListening(false); } else { recRef.current.start(); setIsListening(true); } }
+  return { isListening, supported, toggle };
+}
+
+// ─── Notification Panel ───────────────────────────────────────────────────────
+
+function NotificationPanel({ notifications, onRead, onReadAll, onClose }:
+  { notifications: Notification[]; onRead: (id: number) => void; onReadAll: () => void; onClose: () => void }) {
+  const icons: Record<string, { el: React.ReactNode; cls: string }> = {
+    lead: { el:<Tag className="w-3.5 h-3.5"/>, cls:"bg-blue-100 text-blue-600" },
+    rdv: { el:<Calendar className="w-3.5 h-3.5"/>, cls:"bg-emerald-100 text-emerald-600" },
+    price: { el:<DollarSign className="w-3.5 h-3.5"/>, cls:"bg-amber-100 text-amber-600" },
+    rating: { el:<Star className="w-3.5 h-3.5"/>, cls:"bg-purple-100 text-purple-600" },
+    system: { el:<Info className="w-3.5 h-3.5"/>, cls:"bg-gray-100 text-gray-600" },
+    reassign: { el:<RefreshCw className="w-3.5 h-3.5"/>, cls:"bg-orange-100 text-orange-600" },
+  };
+  return (
+    <div className="fixed inset-0 z-50" onClick={onClose}>
+      <div className="absolute top-14 right-4 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden" onClick={(e)=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div><div className="font-semibold text-sm text-foreground">Notifications</div><div className="text-xs text-muted-foreground">{notifications.filter((n)=>!n.read).length} non lues</div></div>
+          <div className="flex items-center gap-2"><button onClick={onReadAll} className="text-xs text-primary hover:underline">Tout marquer lu</button><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4"/></button></div>
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          {notifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">Aucune notification</div>
+          : notifications.map((n) => {
+            const ni = icons[n.type];
+            return (
+              <button key={n.id} onClick={()=>onRead(n.id)} className={`w-full text-left px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 flex items-start gap-3 ${!n.read?"bg-blue-50/30":""}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ni?.cls}`}>{ni?.el}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2"><div className={`text-sm text-foreground ${!n.read?"font-semibold":""}`}>{n.title}</div>{!n.read&&<span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1"/>}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</div>
+                  <div className="text-xs text-muted-foreground/60 mt-1">{n.time}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Profile Modal ────────────────────────────────────────────────────────────
+
+function ProfileModal({ user, role, onClose, onSave }:
+  { user: AppUser; role: Role; onClose: () => void; onSave: (u: AppUser) => void }) {
+  const [form, setForm] = useState({ ...user });
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [techSpec, setTechSpec] = useState<string[]>([]);
+  const [radius, setRadius] = useState(10);
+  const isClient = role === "client";
+
+  // Charge le profil technicien réel (spécialisations + rayon) depuis l'API
+  useEffect(() => {
+    if (isClient) return;
+    api.get(`/technicians/${user.id}`).then((res) => {
+      setTechSpec(res.data.specializations ?? []);
+      setRadius(res.data.radius_km ?? 10);
+    }).catch(() => {});
+  }, [isClient, user.id]);
+
+  function toggleSpec(s: string) { setTechSpec((p)=>p.includes(s)?p.filter((x)=>x!==s):[...p,s]); }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const { data } = await api.patch(`/users/${user.id}`, form);
+      if (!isClient) {
+        await api.patch(`/technicians/${user.id}`, { specializations: techSpec, radius_km: radius });
+      }
+      onSave(data);
+      setSaved(true);
+      setTimeout(() => { setSaved(false); onClose(); }, 1000);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function field(key: keyof AppUser, label: string, type="text", ph="") {
+    return <div><label className="block text-xs font-medium mb-1.5">{label}</label><input type={type} placeholder={ph} value={form[key] as string} onChange={(e)=>setForm((p)=>({...p,[key]:e.target.value}))} className={`w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none ${isClient?"focus:border-blue-400":"focus:border-emerald-400"} transition-all`}/></div>;
+  }
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl overflow-hidden" onClick={(e)=>e.stopPropagation()}>
+        <div className={`h-1.5 ${isClient?"bg-blue-500":"bg-emerald-500"}`}/>
+        <div className="p-6 max-h-[85vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>Mon profil</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
+          <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-xl">
+            <div className={`w-14 h-14 rounded-full ${isClient?"bg-blue-500":"bg-emerald-500"} flex items-center justify-center text-white text-xl font-bold`}>{form.name.split(" ").map((n)=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
+            <div><div className="font-semibold text-foreground">{form.name||"Votre nom"}</div><Badge color={isClient?"blue":"green"}>{isClient?"Client":"Technicien"}</Badge></div>
+          </div>
+          <div className="space-y-4">
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Informations personnelles</div>
+            <div className="grid grid-cols-2 gap-3">{field("name","Nom complet","text","Votre nom")}{field("email","Email","email","votre@email.com")}{field("phone","Téléphone","tel","+213 6 xx xx xx")}{field("city","Ville","text","Alger")}</div>
+            {field("address","Adresse","text","Numéro, rue, quartier…")}
+            {!isClient && (
+              <div className="pt-2 space-y-4">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Spécialisations</div>
+                <div className="flex flex-wrap gap-2">{ALL_SPECIALIZATIONS.map((s)=><button key={s} onClick={()=>toggleSpec(s)} className={`px-3 py-1.5 rounded-full text-xs border transition-all ${techSpec.includes(s)?"bg-emerald-500 text-white border-emerald-500":"bg-gray-50 text-muted-foreground border-gray-200 hover:border-emerald-300"}`}>{techSpec.includes(s)&&<Check className="w-3 h-3 inline mr-1"/>}{s}</button>)}</div>
+                <div><div className="flex items-center justify-between mb-2"><div className="text-xs font-medium">Rayon d'intervention</div><span className="text-sm font-bold text-emerald-600">{radius} km</span></div><input type="range" min={2} max={50} value={radius} onChange={(e)=>setRadius(Number(e.target.value))} className="w-full accent-emerald-500"/></div>
+              </div>
+            )}
+          </div>
+          <div className="mt-6">{saved?<div className="flex items-center justify-center gap-2 h-11 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>Profil enregistré !</div>:<button onClick={save} disabled={saving} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-500 hover:bg-emerald-600"}`}><Save className="w-4 h-4"/>{saving?"Enregistrement…":"Enregistrer"}</button>}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Location Modal ───────────────────────────────────────────────────────────
+// Géolocalisation réelle : on géocode via l'API (proxy vers un service de
+// géocodage) au lieu de renvoyer des coordonnées codées en dur.
+
+function LocationModal({ role, onDone }: { role: Role; onDone: (loc: UserLocation | null) => void }) {
+  const [state, setState] = useState<"ask"|"loading"|"done"|"denied">("ask");
+  const [city, setCity] = useState("");
+  const [geoError, setGeoError] = useState("");
+  const isClient = role === "client";
+
+  function requestGeo() {
+    if (!("geolocation" in navigator)) {
+      setGeoError("GPS indisponible sur ce navigateur. Saisissez votre ville manuellement.");
+      setState("denied");
+      return;
+    }
+
+    setState("loading");
+    setGeoError("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        let loc: UserLocation = {
+          lat: latitude,
+          lng: longitude,
+          city: "Position GPS",
+          district: "Position actuelle",
+        };
+
+        try {
+          const { data } = await api.get("/geocode/reverse", { params: { lat: latitude, lng: longitude } });
+          loc = {
+            lat: latitude,
+            lng: longitude,
+            city: data.city || loc.city,
+            district: data.district || data.city || loc.district,
+          };
+        } catch {
+          loc = {
+            ...loc,
+            city: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+          };
+        }
+
+        setState("done");
+        setTimeout(() => onDone(loc), 800);
+      },
+      (error) => {
+        const messages: Record<number, string> = {
+          [error.PERMISSION_DENIED]: "Autorisez la localisation dans le navigateur puis reessayez.",
+          [error.POSITION_UNAVAILABLE]: "Position GPS indisponible. Saisissez votre ville manuellement.",
+          [error.TIMEOUT]: "La localisation a pris trop de temps. Reessayez ou saisissez votre ville.",
+        };
+        setGeoError(messages[error.code] || "GPS indisponible. Saisissez votre ville manuellement.");
+        setState("denied");
+      },
+      { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
+    );
+  }
+
+  async function manualSubmit() {
+    if (!city.trim()) return;
+    try {
+      const { data } = await api.get("/geocode/forward", { params: { city } });
+      onDone({ lat: data.lat, lng: data.lng, city: data.city ?? city, district: data.district ?? city });
+    } catch {
+      // Si le géocodage échoue, on avance quand même avec la ville saisie
+      onDone({ lat: 0, lng: 0, city, district: city });
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 ${isClient?"bg-blue-50":"bg-emerald-50"}`}><Navigation className={`w-6 h-6 ${isClient?"text-blue-600":"text-emerald-600"}`}/></div>
+        <h2 className="text-xl font-bold text-foreground mb-2" style={{ fontFamily:"Onest,sans-serif" }}>{isClient?"Trouvez les techniciens près de vous":"Définissez votre zone d'intervention"}</h2>
+        <p className="text-sm text-muted-foreground mb-6">{isClient?"Votre position nous permet d'afficher les techniciens disponibles les plus proches, spécialisés selon votre type de panne.":"Votre zone permet aux clients de vous trouver en priorité selon leur panne et votre spécialisation."}</p>
+        {state==="ask" && (
+          <div className="space-y-3">
+            <button onClick={requestGeo} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-600 hover:bg-emerald-700"}`}><Navigation className="w-4 h-4"/>Utiliser ma position GPS</button>
+            <div className="relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"/></div><div className="relative flex justify-center"><span className="px-3 bg-white text-xs text-muted-foreground">ou saisissez votre ville</span></div></div>
+            <div className="flex gap-2"><input placeholder="Ex: Alger, Oran…" value={city} onChange={(e)=>setCity(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&manualSubmit()} className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><button onClick={manualSubmit} disabled={!city.trim()} className="h-10 px-4 rounded-lg bg-gray-800 text-white text-sm disabled:opacity-40">OK</button></div>
+            <button onClick={()=>onDone(null)} className="w-full text-center text-xs text-muted-foreground py-1 hover:text-foreground">Passer cette étape</button>
+          </div>
+        )}
+        {state==="loading" && <div className="flex flex-col items-center py-6 gap-3"><div className="w-10 h-10 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">Localisation en cours…</div></div>}
+        {state==="done" && <div className="flex flex-col items-center py-6 gap-3"><CheckCircle2 className="w-10 h-10 text-emerald-500"/><div className="text-sm font-medium">Position obtenue</div></div>}
+        {state==="denied" && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-lg border border-amber-100 text-xs text-amber-700"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5"/>{geoError || "Accès GPS refusé. Saisissez votre ville manuellement."}</div>
+            <div className="flex gap-2"><input placeholder="Votre ville…" value={city} onChange={(e)=>setCity(e.target.value)} className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><button onClick={manualSubmit} disabled={!city.trim()} className="h-10 px-4 rounded-lg bg-gray-800 text-white text-sm disabled:opacity-40">OK</button></div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Landing ──────────────────────────────────────────────────────────────────
+
+function Landing({ onSelect }: { onSelect: (role: Role) => void }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col">
+      <nav className="px-8 py-5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shadow-sm"><Zap className="w-4 h-4 text-white"/></div><span className="font-bold text-lg text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI</span></div>
+        <div className="flex gap-2"><button onClick={()=>onSelect("client")} className="h-9 px-4 text-sm text-muted-foreground hover:text-foreground">Connexion client</button><button onClick={()=>onSelect("technician")} className="h-9 px-4 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 font-medium">Espace technicien</button></div>
+      </nav>
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-16 text-center">
+        <div className="inline-flex items-center gap-2 mb-6 px-3 py-1.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"/>Devis HVAC instantané par intelligence artificielle</div>
+        <h1 className="text-5xl md:text-6xl font-black text-foreground mb-6 leading-tight max-w-3xl" style={{ fontFamily:"Onest,sans-serif" }}>Votre devis HVAC<br/><span className="text-primary">en quelques secondes.</span></h1>
+        <p className="text-lg text-muted-foreground max-w-xl mb-14">Décrivez votre problème, obtenez une estimation de prix et trouvez un technicien qualifié près de chez vous — sans attente, sans appel.</p>
+        <div className="grid md:grid-cols-2 gap-5 max-w-2xl w-full">
+          {[{r:"client" as Role,t:"Je suis un client",d:"Obtenez un devis, trouvez un technicien et réservez.",Icon:User,c:"blue"},{r:"technician" as Role,t:"Je suis technicien",d:"Gérez vos leads, tarifs et agenda.",Icon:Wrench,c:"emerald"}].map(({r,t,d,Icon,c})=>(
+            <button key={r} onClick={()=>onSelect(r)} className="group bg-white rounded-2xl p-8 border border-gray-100 shadow-sm hover:shadow-lg transition-all text-left">
+              <div className={`w-12 h-12 rounded-xl bg-${c}-50 flex items-center justify-center mb-5 group-hover:bg-${c}-100 transition-colors`}><Icon className={`w-6 h-6 text-${c}-600`}/></div>
+              <div className="text-lg font-bold text-foreground mb-1" style={{ fontFamily:"Onest,sans-serif" }}>{t}</div>
+              <div className="text-sm text-muted-foreground mb-4">{d}</div>
+              <div className={`flex items-center gap-1.5 text-sm text-${c}-600 font-medium`}>Accéder <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform"/></div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Auth Form ────────────────────────────────────────────────────────────────
+// Plus de "Continuer avec Google" simulé : soit tu branches une vraie stratégie
+// OAuth côté backend (Passport Google, callback -> JWT), soit tu retires ce
+// bouton pour ne pas promettre une fonctionnalité qui n'existe pas encore.
+
+function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; onLogin: (u: AppUser, token: string) => void }) {
+  const [mode, setMode] = useState<"login"|"register">("login");
+  const [showPass, setShowPass] = useState(false);
+  const [form, setForm] = useState({ name:"", email:"", password:"" });
+  const [error, setError] = useState<string|null>(null);
+  const [loading, setLoading] = useState(false);
+  const isClient = role === "client";
+  const cl = isClient?"text-blue-600":"text-emerald-600";
+  const bg = isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-600 hover:bg-emerald-700";
+  const focus = isClient?"focus:border-blue-400":"focus:border-emerald-400";
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const url = mode === "login" ? "/login" : "/register";
+      const payload = mode === "login"
+        ? { email: form.email, password: form.password, role }
+        : { name: form.name, email: form.email, password: form.password, role };
+      const { data } = await api.post(url, payload);
+
+      console.log("REPONSE DU BACKEND :", data);
+
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      onLogin(data.user, data.token);
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? "Une erreur est survenue. Vérifiez vos identifiants.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6"><ChevronRight className="w-4 h-4 rotate-180"/>Retour</button>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+          <div className="flex items-center gap-3 mb-8">
+            <div className={`w-10 h-10 rounded-xl ${isClient?"bg-blue-50":"bg-emerald-50"} flex items-center justify-center`}>{isClient?<User className={`w-5 h-5 ${cl}`}/>:<Wrench className={`w-5 h-5 ${cl}`}/>}</div>
+            <div><div className="font-bold text-foreground text-sm">{isClient?"Espace client":"Espace technicien"}</div><div className="text-xs text-muted-foreground">{mode==="login"?"Connexion":"Créer un compte"}</div></div>
+          </div>
+          {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0"/>{error}</div>}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode==="register"&&<div><label className="block text-xs font-medium mb-1.5">Nom complet</label><input required value={form.name} onChange={(e)=>setForm((p)=>({...p,name:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>}
+            <div><label className="block text-xs font-medium mb-1.5">Email</label><input type="email" required placeholder="votre@email.com" value={form.email} onChange={(e)=>setForm((p)=>({...p,email:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>
+            <div><label className="block text-xs font-medium mb-1.5">Mot de passe</label><div className="relative"><input type={showPass?"text":"password"} required minLength={6} placeholder="••••••••" value={form.password} onChange={(e)=>setForm((p)=>({...p,password:e.target.value}))} className={`w-full h-11 px-4 pr-10 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPass?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button></div></div>
+            <button type="submit" disabled={loading} className={`w-full h-11 rounded-xl ${bg} text-white text-sm font-semibold mt-2 disabled:opacity-50`}>{loading?"Chargement…":mode==="login"?"Se connecter":"Créer mon compte"}</button>
+          </form>
+          <div className="mt-5 text-center text-sm text-muted-foreground">{mode==="login"?<>Pas encore de compte ?{" "}<button onClick={()=>setMode("register")} className={`${cl} font-medium hover:underline`}>S'inscrire</button></>:<>Déjà un compte ?{" "}<button onClick={()=>setMode("login")} className={`${cl} font-medium hover:underline`}>Se connecter</button></>}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Client Dashboard ─────────────────────────────────────────────────────────
+
+function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }:
+  { user: AppUser; location: UserLocation | null; technicians: Technician[]; onLogout: () => void; onUpdateUser: (u: AppUser) => void }) {
+  const [tab, setTab] = useState<ClientTab>("chat");
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [contactedTechs, setContactedTechs] = useState<number[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const unread = notifications.filter((n)=>!n.read).length;
+  const tabs = [{ id:"chat" as ClientTab,label:"Devis IA",icon:MessageSquare },{ id:"rdv" as ClientTab,label:"Rendez-vous",icon:Calendar },{ id:"map" as ClientTab,label:"Techniciens",icon:MapPin }];
+
+  useEffect(() => {
+    api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
+    api.get("/appointments").then((res) => {
+      setAppointments(res.data.map(mapAppointment));
+      setContactedTechs(res.data.map((a: any) => a.technician_id));
+    }).catch(console.error);
+  }, []);
+
+  function markRead(id: number) {
+    setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    api.patch(`/notifications/${id}/read`).catch(console.error);
+  }
+  function markAllRead() {
+    setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
+    api.patch("/notifications/read-all").catch(console.error);
+  }
+  async function contactTechnician(id: number) {
+    setContactedTechs((p) => (p.includes(id) ? p : [...p, id]));
+    try {
+      await api.post("/leads/contact", { technicianId: id });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI</span></div>
+        <div className="flex items-center gap-3">
+          {location&&<div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 text-blue-500"/>{location.city}</div>}
+          <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
+          <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">{user.avatar}</div><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
+          <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
+        </div>
+      </header>
+      <div className="bg-white border-b border-border px-6">
+        <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-primary text-primary":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
+      </div>
+      <div className="flex-1 overflow-hidden">
+        {tab==="chat"&&<ClientChat technicians={technicians} onContact={contactTechnician}/>}
+        {tab==="rdv"&&<ClientRdv technicians={technicians} appointments={appointments} setAppointments={setAppointments} contactedTechs={contactedTechs}/>}
+        {tab==="map"&&<ClientMap technicians={technicians} location={location} contactedTechs={contactedTechs} onContact={contactTechnician}/>}
+      </div>
+      {notifOpen&&<NotificationPanel notifications={notifications} onRead={markRead} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
+      {profileOpen&&<ProfileModal user={user} role="client" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
+    </div>
+  );
+}
+
+// ─── Client Chat ──────────────────────────────────────────────────────────────
+// Le devis n'est plus calculé en dur (prix fixe 187 €) : il part au backend
+// (POST /chat/quote) qui applique la grille tarifaire du technicien matché
+// (ou ton propre modèle de pricing).
+
+function ClientChat({ technicians, onContact }: { technicians: Technician[]; onContact: (id: number) => void }) {
+  const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro." }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(0);
+  const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number }|null>(null);
+  const [priceDecision, setPriceDecision] = useState<PriceDecision>(null);
+  const [counterPrice, setCounterPrice] = useState("");
+  const [counterSent, setCounterSent] = useState(false);
+  const [showSlots, setShowSlots] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<{ date:string; label:string; time:string; techId:number }|null>(null);
+  const [booked, setBooked] = useState(false);
+  const [customDate, setCustomDate] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const { isListening, supported, toggle:toggleMic } = useSpeechRecognition((text)=>setInput((p)=>p+(p?" ":"")+text));
+  const faultType = detectFaultType(messages);
+  const relatedSpecs = FAULT_SPECIALIZATION_MAP[faultType] ?? [];
+  const matchingTechs = technicians.filter((t)=>t.available&&t.specializations.some((s)=>relatedSpecs.includes(s)));
+  const slotDate = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+  const proposedSlots = [
+    { date:slotDate(0), label:"Aujourd'hui", time:"16:30", techId:matchingTechs[0]?.id??1 },
+    { date:slotDate(1), label:"Demain matin", time:"09:00", techId:matchingTechs[0]?.id??1 },
+    { date:slotDate(1), label:"Demain après-midi", time:"14:00", techId:matchingTechs[1]?.id??matchingTechs[0]?.id??1 },
+    { date:slotDate(3), label:"Dans 3 jours", time:"10:30", techId:matchingTechs[0]?.id??1 },
+  ];
+  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[messages,quote,showSlots,priceDecision]);
+
+  async function send(text: string) {
+    if (loading||!text.trim()) return;
+    const nextMessages = [...messages, { role:"user" as const, text }];
+    setMessages(nextMessages); setInput(""); setLoading(true);
+    const flow = DEMO_CHAT_FLOWS[step];
+    if (flow?.quote) {
+      setMessages((m)=>[...m,{role:"bot",text:"Paramètres extraits — calcul du devis en cours…"}]);
+      try {
+        const { data } = await api.post("/chat/quote", { messages: nextMessages, faultType });
+        setQuote({ price: data.price, low: data.low, high: data.high, conf: data.confidence });
+      } catch (err) {
+        console.error(err);
+        setMessages((m)=>[...m,{role:"bot",text:"Désolé, impossible de calculer le devis pour le moment."}]);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setTimeout(() => {
+        setMessages((m)=>[...m,{role:"bot",text:flow?.response??"L'appareil est-il facilement accessible ? (oui/non)"}]);
+        setLoading(false);
+      }, 400);
+    }
+    setStep((s)=>Math.min(s+1,DEMO_CHAT_FLOWS.length-1));
+  }
+
+  function handlePriceDecision(d: PriceDecision) {
+    setPriceDecision(d);
+    if (d==="accept") { setMessages((m)=>[...m,{role:"user",text:"J'accepte ce prix."}]); setTimeout(()=>{ setMessages((m)=>[...m,{role:"bot",text:`Parfait ! Voici les spécialistes en ${faultType} disponibles près de vous.`}]); setShowSlots(true); },400); }
+    else if (d==="decline") setMessages((m)=>[...m,{role:"user",text:"Je décline ce prix."},{role:"bot",text:"Pas de problème. Souhaitez-vous une évaluation gratuite sur site ? Un technicien pourra vous donner un devis précis."}]);
+  }
+
+  async function sendCounter() {
+    if (!counterPrice) return; setCounterSent(true);
+    setMessages((m)=>[...m,{role:"user",text:`Je propose ${counterPrice} €.`},{role:"bot",text:`Votre proposition de ${counterPrice} € est transmise aux techniciens disponibles. Nous vous recontactons sous 30 minutes.`}]);
+    setPriceDecision(null);
+    try { await api.post("/chat/counter-offer", { amount: Number(counterPrice), faultType }); } catch (err) { console.error(err); }
+  }
+
+  async function confirmSlot() {
+    if (!selectedSlot) return;
+    const tech = technicians.find((t)=>t.id===selectedSlot.techId); if(!tech) return;
+    try {
+      await api.post("/appointments", {
+        technicianId: tech.id,
+        date: selectedSlot.date,
+        time: selectedSlot.time,
+        service: `Diagnostic ${faultType}`,
+        faultType,
+        estimatedPrice: quote?.price ?? 0,
+      });
+      onContact(tech.id); setBooked(true); setShowSlots(false);
+      setMessages((m)=>[...m,{role:"bot",text:`Rendez-vous confirmé ! ${selectedSlot.label} à ${selectedSlot.time} avec ${tech.name} (spécialiste ${faultType}). Confirmation SMS envoyée.`}]);
+    } catch (err) {
+      console.error(err);
+      setMessages((m)=>[...m,{role:"bot",text:"Impossible de confirmer le rendez-vous, réessayez."}]);
+    }
+  }
+
+  const suggestions = ["Ma clim Daikin split ne refroidit plus","Climatiseur LG en panne","Chaudière Carrier n'allume plus"];
+  return (
+    <div className="flex flex-col max-w-2xl mx-auto w-full p-4 md:p-6" style={{ height:"calc(100vh - 112px)" }}>
+      <div className="flex-1 overflow-y-auto space-y-4 pb-4">
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><Zap className="w-4 h-4 text-white"/></div>
+          <div className="text-sm text-blue-800"><strong>Devis gratuit et instantané.</strong> Décrivez votre panne ou utilisez le micro.</div>
+        </div>
+        {messages.map((m,i)=>(
+          <div key={i} className={`flex gap-3 ${m.role==="user"?"justify-end":"justify-start"}`}>
+            {m.role==="bot"&&<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5"><Zap className="w-3.5 h-3.5 text-white"/></div>}
+            <div className={`max-w-[78%] text-sm px-4 py-3 rounded-2xl leading-relaxed shadow-sm ${m.role==="user"?"bg-primary text-white rounded-br-sm":"bg-white text-foreground rounded-bl-sm border border-gray-100"}`}>{m.text}</div>
+          </div>
+        ))}
+        {loading&&<div className="flex gap-3"><div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><Zap className="w-3.5 h-3.5 text-white"/></div><div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center shadow-sm">{[0,150,300].map((d)=><span key={d} className="w-2 h-2 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay:`${d}ms` }}/>)}</div></div>}
+        {quote&&(
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
+              <div className="flex items-start justify-between"><div><div className="text-xs font-medium opacity-80 mb-1">ESTIMATION — {faultType.toUpperCase()}</div><div className="flex items-baseline gap-2"><span className="text-4xl font-black" style={{ fontFamily:"Onest,sans-serif" }}>{quote.price} €</span><span className="text-sm opacity-75">{quote.low}–{quote.high} €</span></div></div><div className="text-right text-xs opacity-80"><div>Confiance</div><div className="text-lg font-bold opacity-100">{quote.conf}%</div></div></div>
+              <div className="mt-2 flex items-center gap-2"><div className="flex-1 h-1 bg-white/20 rounded-full"><div className="h-1 bg-white rounded-full" style={{ width:`${quote.conf}%` }}/></div></div>
+            </div>
+            {!priceDecision&&!counterSent&&(
+              <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+                <div className="text-sm font-medium text-foreground mb-3">Que souhaitez-vous faire ?</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={()=>handlePriceDecision("accept")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"><ThumbsUp className="w-5 h-5"/><span className="text-xs font-semibold">Accepter</span></button>
+                  <button onClick={()=>handlePriceDecision("negotiate")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700"><Pencil className="w-5 h-5"/><span className="text-xs font-semibold">Négocier</span></button>
+                  <button onClick={()=>handlePriceDecision("decline")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 text-red-600"><ThumbsDown className="w-5 h-5"/><span className="text-xs font-semibold">Décliner</span></button>
+                </div>
+              </div>
+            )}
+            {priceDecision==="negotiate"&&!counterSent&&(
+              <div className="px-4 pb-4 border-t border-gray-100 pt-4">
+                <div className="text-sm font-medium mb-2">Votre budget maximum</div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1"><input type="number" placeholder={String(quote.price-20)} value={counterPrice} onChange={(e)=>setCounterPrice(e.target.value)} className="w-full h-10 px-3 pr-6 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">€</span></div>
+                  <button onClick={sendCounter} disabled={!counterPrice} className="h-10 px-4 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40">Envoyer</button>
+                  <button onClick={()=>setPriceDecision(null)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm text-muted-foreground">✕</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {showSlots&&!booked&&(
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-gray-100"><div className="text-sm font-semibold">Spécialistes {faultType} disponibles</div><div className="text-xs text-muted-foreground mt-0.5">{matchingTechs.length} technicien(s) correspond(ent) à votre panne</div></div>
+            <div className="p-3 space-y-2">
+              {proposedSlots.map((slot,i)=>{
+                const tech = technicians.find((t)=>t.id===slot.techId); if(!tech) return null;
+                const isSel = selectedSlot?.date===slot.date&&selectedSlot?.time===slot.time&&selectedSlot?.techId===slot.techId;
+                return (
+                  <button key={i} onClick={()=>setSelectedSlot(slot)} className={`w-full text-left p-3 rounded-xl border transition-all ${isSel?"border-primary bg-blue-50":"border-gray-200 hover:border-gray-300 bg-gray-50/50"}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-full ${tech.color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{tech.avatar}</div>
+                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {tech.distanceKm} km · {tech.response}</div></div>
+                      {isSel&&<Check className="w-4 h-4 text-primary shrink-0"/>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-gray-100 space-y-3">
+              <div className="flex gap-2">
+                <button onClick={confirmSlot} disabled={!selectedSlot} className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40">Confirmer</button>
+                <button onClick={()=>{ setShowSlots(false); setMessages((m)=>[...m,{role:"user",text:"Non merci."},{role:"bot",text:"Pas de problème. Vous pouvez réserver depuis l'onglet Rendez-vous."}]); }} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">Non merci</button>
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef}/>
+      </div>
+      {messages.length<=1&&<div className="flex flex-wrap gap-2 mb-3">{suggestions.map((s)=><button key={s} onClick={()=>send(s)} className="text-xs px-3 py-1.5 rounded-full bg-white border border-gray-200 text-muted-foreground hover:border-primary/40 hover:text-primary shadow-sm">{s}</button>)}</div>}
+      <div className={`bg-white rounded-2xl border shadow-sm flex items-center gap-2 px-3 py-2 transition-all ${isListening?"border-red-400 ring-2 ring-red-100":"border-gray-100"}`}>
+        {supported&&<button onClick={toggleMic} className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isListening?"bg-red-500 text-white animate-pulse":"bg-gray-100 text-muted-foreground hover:bg-gray-200"}`}>{isListening?<MicOff className="w-4 h-4"/>:<Mic className="w-4 h-4"/>}</button>}
+        <input value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&send(input)} placeholder={isListening?"Écoute en cours…":"Décrivez votre problème HVAC…"} className="flex-1 text-sm placeholder:text-muted-foreground bg-transparent outline-none"/>
+        <button onClick={()=>send(input)} disabled={!input.trim()||loading} className="w-9 h-9 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 disabled:opacity-40 shrink-0"><Send className="w-4 h-4"/></button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Client RDV ───────────────────────────────────────────────────────────────
+
+function ClientRdv({ technicians, appointments, setAppointments, contactedTechs }:
+  { technicians: Technician[]; appointments: Appointment[]; setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>; contactedTechs: number[] }) {
+  const [selectedAppt, setSelectedAppt] = useState<Appointment|null>(null);
+  const [feedbackAppt, setFeedbackAppt] = useState<number|null>(null);
+  const [feedback, setFeedback] = useState({ rating:0, comment:"" });
+  const completed = appointments.filter((a)=>a.status==="completed");
+  const upcoming = appointments.filter((a)=>a.status==="confirmed"||a.status==="pending");
+
+  async function confirmPrice(id: number) {
+    setAppointments((apps)=>apps.map((a)=>a.id===id?{...a,clientConfirmedPrice:true}:a));
+    try { await api.patch(`/appointments/${id}`, { client_confirmed_price: true }); } catch (err) { console.error(err); }
+  }
+
+  async function submitFeedback(id: number) {
+    try {
+      const { data } = await api.post(`/appointments/${id}/feedback`, { rating: feedback.rating, feedback: feedback.comment });
+      setAppointments((apps)=>apps.map((a)=>a.id===id?mapAppointment(data):a));
+    } catch (err) { console.error(err); }
+    setFeedbackAppt(null); setFeedback({rating:0,comment:""});
+  }
+
+  const canRate = (appt: Appointment) => appt.status==="completed" || contactedTechs.includes(appt.technicianId);
+  return (
+    <div className="h-full overflow-y-auto p-4 md:p-6 max-w-4xl mx-auto w-full">
+      <h2 className="text-xl font-bold text-foreground mb-1" style={{ fontFamily:"Onest,sans-serif" }}>Mes rendez-vous</h2>
+      <p className="text-sm text-muted-foreground mb-6">Historique et rendez-vous à venir</p>
+      {upcoming.length>0&&(
+        <div className="mb-8">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">À venir</h3>
+          <div className="space-y-3">{upcoming.map((appt)=>{
+            const tech = technicians.find((t)=>t.id===appt.technicianId);
+            const showFb = feedbackAppt===appt.id;
+            const ratable = canRate(appt);
+            return (
+              <div key={appt.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+                <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
+                  <div className="flex items-start justify-between"><div><div className="font-semibold text-foreground">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="confirmed"?"green":"amber"}>{appt.status==="confirmed"?"Confirmé":"En attente"}</Badge></div>
+                  <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div><div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/>{appt.time}</div><div className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/>{appt.address}</div></div>
+                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">Prix estimé : </span><span className="font-bold">{appt.estimatedPrice} €</span></div>
+                  {ratable&&!appt.rating&&!showFb&&<button onClick={()=>setFeedbackAppt(appt.id)} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1"><Star className="w-3.5 h-3.5"/>Évaluer</button>}
+                  {showFb&&(
+                    <div className="mt-3 space-y-2 pt-3 border-t border-gray-100">
+                      <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setFeedback((f)=>({...f,rating:s}))}><Star className={`w-5 h-5 ${s<=feedback.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
+                      <textarea value={feedback.comment} onChange={(e)=>setFeedback((f)=>({...f,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-16 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:border-blue-400"/>
+                      <div className="flex gap-2"><button onClick={()=>submitFeedback(appt.id)} disabled={!feedback.rating} className="flex-1 h-8 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-40">Publier</button><button onClick={()=>setFeedbackAppt(null)} className="h-8 px-3 rounded-lg border border-gray-200 text-xs text-muted-foreground">Annuler</button></div>
+                    </div>
+                  )}
+                </div></div>
+              </div>
+            );
+          })}</div>
+        </div>
+      )}
+      <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Historique</h3>
+      <div className="space-y-3">{completed.map((appt)=>{
+        const tech = technicians.find((t)=>t.id===appt.technicianId);
+        const isExp = selectedAppt?.id===appt.id;
+        const showFb = feedbackAppt===appt.id;
+        return (
+          <div key={appt.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <button onClick={()=>setSelectedAppt(isExp?null:appt)} className="w-full p-5 text-left hover:bg-gray-50">
+              <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
+                <div className="flex items-start justify-between"><div><div className="font-semibold">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color="blue">Terminé</Badge></div>
+                <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div>{appt.rating&&<div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400"/><span className="text-foreground font-medium">{appt.rating}/5</span></div>}</div>
+              </div><ChevronRight className={`w-5 h-5 text-muted-foreground transition-transform ${isExp?"rotate-90":""}`}/></div>
+            </button>
+            {isExp&&(
+              <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-3"><div><div className="text-xs text-muted-foreground mb-1">Prix estimé</div><div className="font-medium">{appt.estimatedPrice} €</div></div><div><div className="text-xs text-muted-foreground mb-1">Prix réel</div><div className="text-lg font-bold">{appt.actualPrice??"—"} €</div></div></div>
+                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>Confirmez-vous avoir payé ce montant ?</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">Oui, j'ai payé {appt.actualPrice} €</button></div>}
+                  {appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200 flex items-center gap-2 text-xs text-emerald-600"><CheckCircle2 className="w-3.5 h-3.5"/>Prix confirmé</div>}
+                </div>
+                {appt.caseDescription&&<div><div className="text-xs font-medium text-muted-foreground mb-2">Description</div><div className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">{appt.caseDescription}</div></div>}
+                {canRate(appt)&&(appt.feedback?(
+                  <div><div className="text-xs font-medium text-muted-foreground mb-2">Votre avis</div><div className="flex gap-1 mb-1">{[1,2,3,4,5].map((s)=><Star key={s} className={`w-4 h-4 ${s<=appt.rating!?"text-amber-400 fill-amber-400":"text-gray-300"}`}/>)}</div><div className="text-sm">{appt.feedback}</div></div>
+                ):!showFb?(
+                  <button onClick={()=>setFeedbackAppt(appt.id)} className="w-full h-9 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 flex items-center justify-center gap-2"><MessageCircle className="w-4 h-4"/>Laisser un avis</button>
+                ):(
+                  <div className="space-y-3">
+                    <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setFeedback((f)=>({...f,rating:s}))}><Star className={`w-6 h-6 ${s<=feedback.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
+                    <textarea value={feedback.comment} onChange={(e)=>setFeedback((f)=>({...f,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-20 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:border-blue-400"/>
+                    <div className="flex gap-2"><button onClick={()=>submitFeedback(appt.id)} disabled={!feedback.rating} className="flex-1 h-9 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40">Publier</button><button onClick={()=>setFeedbackAppt(null)} className="h-9 px-4 rounded-lg border border-gray-200 text-sm text-muted-foreground">Annuler</button></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}</div>
+    </div>
+  );
+}
+
+// ─── Client Map ───────────────────────────────────────────────────────────────
+
+function ClientMap({ technicians, location, contactedTechs, onContact }:
+  { technicians: Technician[]; location: UserLocation|null; contactedTechs: number[]; onContact: (id:number)=>void }) {
+  const [selected, setSelected] = useState<number|null>(null);
+  const [search, setSearch] = useState("");
+  const [filterSpec, setFilterSpec] = useState<string|null>(null);
+  const [showAvailOnly, setShowAvailOnly] = useState(false);
+  const [ratingTech, setRatingTech] = useState<number|null>(null);
+  const [ratings, setRatings] = useState<Record<number,{rating:number;comment:string}>>({});
+  const [ratingDraft, setRatingDraft] = useState({rating:0,comment:""});
+  const filtered = technicians.filter((t)=>(!showAvailOnly||t.available)&&(!filterSpec||t.specializations.includes(filterSpec))&&(!search||t.name.toLowerCase().includes(search.toLowerCase())||t.specializations.some((s)=>s.toLowerCase().includes(search.toLowerCase())))).sort((a,b)=>a.distanceKm-b.distanceKm);
+
+  async function submitRating(techId: number) {
+    try {
+      await api.post(`/technicians/${techId}/ratings`, ratingDraft);
+      setRatings((r)=>({...r,[techId]:ratingDraft}));
+    } catch (err) { console.error(err); }
+    setRatingTech(null); setRatingDraft({rating:0,comment:""});
+  }
+
+  return (
+    <div className="h-full flex flex-col md:flex-row overflow-hidden">
+      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col">
+        <div className="p-3 border-b border-border space-y-2">
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Nom ou spécialisation…" className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={()=>setShowAvailOnly(!showAvailOnly)} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${showAvailOnly?"bg-emerald-500 text-white border-emerald-500":"border-gray-200 text-muted-foreground"}`}><span className={`w-1.5 h-1.5 rounded-full ${showAvailOnly?"bg-white":"bg-emerald-400"}`}/>Disponibles</button>
+            {["Climatisation","Chauffage","Installation","Réparation"].map((spec)=><button key={spec} onClick={()=>setFilterSpec(filterSpec===spec?null:spec)} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${filterSpec===spec?"bg-primary text-white border-primary":"border-gray-200 text-muted-foreground"}`}>{spec}</button>)}
+          </div>
+          {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{filtered.length} technicien(s) · depuis <strong>{location.city}</strong></div>}
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {filtered.map((t)=>{
+            const isContacted = contactedTechs.includes(t.id);
+            const existing = ratings[t.id];
+            const isRating = ratingTech===t.id;
+            return (
+              <div key={t.id} className={`border-b border-gray-50 transition-colors ${selected===t.id?"bg-blue-50":"hover:bg-gray-50"}`}>
+                <button onClick={()=>setSelected(selected===t.id?null:t.id)} className="w-full text-left p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="relative"><Avatar initials={t.avatar} color={t.color}/>{t.available&&<span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-white"/>}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm} km</span></div>
+                      <div className="flex flex-wrap gap-1 mt-1">{t.specializations.slice(0,2).map((s)=><span key={s} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{s}</span>)}</div>
+                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className="w-3 h-3 text-amber-400 fill-amber-400"/><span className="text-xs font-medium">{existing?existing.rating:t.rating}</span><span className="text-xs text-muted-foreground">({t.reviews})</span></div><Badge color={t.available?"green":"gray"}>{t.available?"Disponible":"Indisponible"}</Badge>{isContacted&&<Badge color="blue">Contacté</Badge>}</div>
+                    </div>
+                  </div>
+                </button>
+                {selected===t.id&&(
+                  <div className="px-4 pb-4 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="w-3.5 h-3.5"/>Répond en {t.response}</div>
+                    <div className="text-xs font-medium text-primary">{t.price}</div>
+                    <div className="flex flex-wrap gap-1">{t.tags.map((tag)=><span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">{tag}</span>)}</div>
+                    <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">Contacter ce technicien</button>
+                    {!isRating&&<button onClick={()=>setRatingTech(t.id)} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{existing?`Votre note : ${existing.rating}/5`:"Évaluer ce technicien"}</button>}
+                    {isRating&&!existing&&(
+                      <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setRatingDraft((r)=>({...r,rating:s}))}><Star className={`w-5 h-5 ${s<=ratingDraft.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
+                        <textarea value={ratingDraft.comment} onChange={(e)=>setRatingDraft((r)=>({...r,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-14 px-2 py-1.5 rounded-lg border border-gray-200 text-xs bg-white resize-none"/>
+                        <div className="flex gap-1.5"><button onClick={()=>submitRating(t.id)} disabled={!ratingDraft.rating} className="flex-1 h-7 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-40">Publier</button><button onClick={()=>setRatingTech(null)} className="h-7 px-2 rounded-lg border border-gray-200 text-xs text-muted-foreground">✕</button></div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex-1 bg-gradient-to-br from-slate-100 to-blue-50 relative overflow-hidden">
+        <div className="absolute inset-0" style={{ backgroundImage:`repeating-linear-gradient(0deg,rgba(0,0,0,0.025) 0,rgba(0,0,0,0.025) 1px,transparent 1px,transparent 50px),repeating-linear-gradient(90deg,rgba(0,0,0,0.025) 0,rgba(0,0,0,0.025) 1px,transparent 1px,transparent 50px)` }}/>
+        <div className="absolute" style={{ top:"38%",left:"28%" }}>
+          <div className="relative -translate-x-1/2 -translate-y-1/2">
+            <div className="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center"><div className="w-2.5 h-2.5 rounded-full bg-white"/></div>
+            <div className="absolute inset-0 rounded-full bg-blue-400 animate-ping opacity-20"/>
+          </div>
+          <div className="absolute top-4 left-4 text-xs font-semibold bg-blue-600 text-white px-2 py-0.5 rounded-full shadow whitespace-nowrap">{location?.city??"Vous"}</div>
+        </div>
+        {technicians.map((t)=>(
+          <button key={t.id} onClick={()=>setSelected(selected===t.id?null:t.id)} className="absolute transform -translate-x-1/2 -translate-y-full hover:scale-110 transition-all" style={{ top:`${t.lat/5}%`,left:`${t.lng/5.5}%` }}>
+            <div className="flex flex-col items-center">
+              <div className={`w-10 h-10 rounded-full ${t.color} border-2 ${selected===t.id?"border-primary scale-110":"border-white"} shadow-md flex items-center justify-center text-white text-xs font-bold relative transition-all`}>
+                {t.avatar}
+                {!t.available&&<div className="absolute inset-0 rounded-full bg-black/30 flex items-center justify-center"><X className="w-4 h-4 text-white"/></div>}
+              </div>
+              <div className={`w-2.5 h-2.5 ${t.color} rotate-45 -mt-1.5 shadow`}/>
+            </div>
+            {t.available&&<div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-white shadow"/>}
+            {contactedTechs.includes(t.id)&&<div className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-blue-400 border-2 border-white shadow"/>}
+          </button>
+        ))}
+        <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5">
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">Disponible</span></div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">Contacté</span></div>
+          <div className="font-medium text-foreground pt-1 border-t border-gray-100">{technicians.filter((t)=>t.available).length} disponibles</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tech Dashboard ───────────────────────────────────────────────────────────
+
+function TechDashboard({ user, location, onLogout, onUpdateUser }:
+  { user: AppUser; location: UserLocation|null; onLogout: ()=>void; onUpdateUser: (u: AppUser)=>void }) {
+  const [tab, setTab] = useState<TechTab>("leads");
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
+  const unread = notifications.filter((n)=>!n.read).length;
+  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
+
+  useEffect(() => {
+    api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
+    api.get("/technicians/me/stats").then((res) => setStats(res.data)).catch(console.error);
+  }, []);
+
+  function markRead(id: number) {
+    setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    api.patch(`/notifications/${id}/read`).catch(console.error);
+  }
+  function markAllRead() {
+    setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
+    api.patch("/notifications/read-all").catch(console.error);
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center"><Wrench className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI Pro</span><Badge color="green">Technicien</Badge></div>
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">Ce mois</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">Revenus</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><div><div className="text-xs text-muted-foreground">Note moy.</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></div></div>
+          {location&&<div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 text-emerald-500"/>{location.city}</div>}
+          <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
+          <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs font-bold">{user.avatar}</div><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
+          <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
+        </div>
+      </header>
+      <div className="bg-white border-b border-border px-6">
+        <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-emerald-500 text-emerald-700":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {tab==="leads"&&<TechLeads/>}
+        {tab==="tarifs"&&<TechTarifs/>}
+        {tab==="agenda"&&<TechAgenda/>}
+      </div>
+      {notifOpen&&<NotificationPanel notifications={notifications} onRead={markRead} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
+      {profileOpen&&<ProfileModal user={user} role="technician" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
+    </div>
+  );
+}
+
+// ─── Tech Leads ───────────────────────────────────────────────────────────────
+
+function TechLeads() {
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [filter, setFilter] = useState<"all"|"new"|"accepted"|"done">("all");
+  const [reassigning, setReassigning] = useState<number|null>(null);
+  const [reassigned, setReassigned] = useState<Record<number,string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get("/leads").then((res) => setLeads(res.data.map(mapLead))).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = filter==="all"?leads:leads.filter((l)=>l.status===filter);
+
+  async function accept(id: number) {
+    try {
+      const { data } = await api.patch(`/leads/${id}`, { status: "accepted" });
+      setLeads((ls)=>ls.map((l)=>l.id===id?mapLead(data):l));
+    } catch (err) { console.error(err); }
+  }
+
+  async function decline(id: number) {
+    setReassigning(id);
+    try {
+      const { data } = await api.post(`/leads/${id}/decline`);
+      setLeads((ls)=>ls.map((l)=>l.id===id?{...l,status:"done"}:l));
+      setReassigned((r)=>({...r,[id]: data.reassignedTo ?? "un autre technicien"}));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setReassigning(null);
+    }
+  }
+
+  return (
+    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Leads entrants</h2><p className="text-sm text-muted-foreground">Si vous déclinez, le moteur IA cherche automatiquement un autre technicien.</p></div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">{(["all","new","accepted","done"] as const).map((f)=><button key={f} onClick={()=>setFilter(f)} className={`px-3 h-7 rounded-md text-xs font-medium ${filter===f?"bg-white shadow-sm text-foreground":"text-muted-foreground"}`}>{f==="all"?"Tous":f==="new"?"Nouveaux":f==="accepted"?"Acceptés":"Terminés"}</button>)}</div>
+      </div>
+      {loading && <div className="text-sm text-muted-foreground">Chargement des leads…</div>}
+      <div className="space-y-3">{filtered.map((lead)=>(
+        <div key={lead.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{lead.client[0]}</div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price} €</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
+              <div className="mt-2 text-sm">{lead.problem}</div>
+              <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">Confiance IA</div><ConfidenceBar value={lead.confidence}/></div>
+              {reassigning===lead.id?<div className="mt-3 flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="w-4 h-4 animate-spin"/>Moteur IA recherche un autre technicien…</div>
+              :reassigned[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4 shrink-0"/>Lead réassigné à <strong>{reassigned[lead.id]}</strong> — client notifié.</div>
+              :(
+                <div className="flex items-center gap-2 mt-3">
+                  {lead.status==="new"&&<><button onClick={()=>accept(lead.id)} className="h-8 px-4 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 flex items-center gap-1.5"><Check className="w-3.5 h-3.5"/>Accepter</button><button onClick={()=>decline(lead.id)} className="h-8 px-4 rounded-lg border border-red-200 text-xs text-red-500 hover:bg-red-50 flex items-center gap-1.5"><X className="w-3.5 h-3.5"/>Décliner</button></>}
+                  {lead.status==="accepted"&&<Badge color="green">Accepté</Badge>}
+                  {lead.status==="done"&&<Badge color="gray">Clôturé</Badge>}
+                  <Badge color={lead.status==="new"?"amber":"gray"}>{lead.status==="new"?"Nouveau":lead.status==="accepted"?"En cours":"Clôturé"}</Badge>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}</div>
+    </div>
+  );
+}
+
+// ─── Tech Tarifs ──────────────────────────────────────────────────────────────
+
+function TechTarifs() {
+  const [tarifs, setTarifs] = useState<PriceItem[]>([]);
+  const [editing, setEditing] = useState<number|null>(null);
+  const [editVal, setEditVal] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTarif, setNewTarif] = useState({service:"",unit:"",price:"",category:"Base"});
+  const [uploadStatus, setUploadStatus] = useState<"idle"|"processing"|"success"|"error">("idle");
+  const categories = ["Base","Réparation","Maintenance","Installation","Urgence"];
+
+  useEffect(() => {
+    api.get("/tarifs").then((res) => setTarifs(res.data)).catch(console.error);
+  }, []);
+
+  const onDrop = useCallback((accepted: File[])=>{
+    const file = accepted[0]; if(!file) return;
+    setUploadStatus("processing");
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext==="xlsx"||ext==="xls") {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: "array" });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const extracted: PriceItem[] = rows
+            .map((r) => ({ service: r.Service||r.service||"", unit: r.Unit||r.unit||r.Unité||"", price: parseFloat(r.Price||r.price||r.Prix||0), category: r.Category||r.category||r.Catégorie||"Base" }))
+            .filter((i) => i.service && i.price);
+          if (extracted.length === 0) { setUploadStatus("error"); return; }
+          // Import en bulk côté backend, qui remplace/fusionne la grille du technicien
+          const { data: saved } = await api.post("/tarifs/import", { items: extracted });
+          setTarifs(saved);
+          setUploadStatus("success");
+        } catch {
+          setUploadStatus("error");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      setUploadStatus("error");
+    }
+  },[]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept:{"application/vnd.ms-excel":[".xls"],"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":[".xlsx"]}, multiple:false });
+
+  async function saveEdit(item: PriceItem) {
+    const v = parseFloat(editVal);
+    if (isNaN(v) || !item.id) { setEditing(null); return; }
+    try {
+      const { data } = await api.patch(`/tarifs/${item.id}`, { price: v });
+      setTarifs((ts) => ts.map((t) => (t.id === item.id ? data : t)));
+    } catch (err) { console.error(err); }
+    setEditing(null);
+  }
+
+  async function addTarif() {
+    if (!newTarif.service || !newTarif.price) return;
+    try {
+      const { data } = await api.post("/tarifs", { ...newTarif, price: parseFloat(newTarif.price) || 0 });
+      setTarifs((ts) => [...ts, data]);
+      setNewTarif({ service:"", unit:"", price:"", category:"Base" });
+      setShowAdd(false);
+    } catch (err) { console.error(err); }
+  }
+
+  const grouped = categories.reduce<Record<string,PriceItem[]>>((acc,cat)=>{acc[cat]=tarifs.filter((t)=>t.category===cat);return acc;},{});
+  return (
+    <div className="p-4 md:p-6 max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-6"><div><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Ma grille tarifaire</h2><p className="text-sm text-muted-foreground">Importez vos tarifs depuis un fichier ou gérez-les manuellement.</p></div><button onClick={()=>setShowAdd(!showAdd)} className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600"><Plus className="w-4 h-4"/>Ajouter</button></div>
+      <div className="mb-6">
+        <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${isDragActive?"border-emerald-400 bg-emerald-50":uploadStatus==="success"?"border-emerald-300 bg-emerald-50":uploadStatus==="error"?"border-red-300 bg-red-50":"border-gray-200 hover:border-emerald-300 bg-gray-50"}`}>
+          <input {...getInputProps()}/>
+          {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?"Déposez ici":"Importez votre grille tarifaire"}</div><div className="text-xs text-muted-foreground">Excel .xlsx ou .xls</div></>}
+          {uploadStatus==="processing"&&<div className="flex flex-col items-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">Extraction en cours…</div></div>}
+          {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">{tarifs.length} services importés</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">Importer un autre fichier</button></>}
+          {uploadStatus==="error"&&<><AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400"/><div className="text-sm font-medium text-red-600 mb-2">Format non reconnu</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-primary hover:underline">Réessayer</button></>}
+        </div>
+      </div>
+      {showAdd&&(
+        <div className="bg-white rounded-xl border border-emerald-200 p-5 mb-5 shadow-sm">
+          <div className="text-sm font-semibold mb-4">Nouveau service</div>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">Intitulé</label><input placeholder="Ex : Nettoyage filtre" value={newTarif.service} onChange={(e)=>setNewTarif((p)=>({...p,service:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div><label className="block text-xs text-muted-foreground mb-1">Unité</label><input placeholder="/ appareil" value={newTarif.unit} onChange={(e)=>setNewTarif((p)=>({...p,unit:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div><label className="block text-xs text-muted-foreground mb-1">Prix (€)</label><input type="number" placeholder="0" value={newTarif.price} onChange={(e)=>setNewTarif((p)=>({...p,price:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">Catégorie</label><select value={newTarif.category} onChange={(e)=>setNewTarif((p)=>({...p,category:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400">{categories.map((c)=><option key={c}>{c}</option>)}</select></div>
+          </div>
+          <div className="flex gap-2"><button onClick={addTarif} className="h-8 px-4 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600">Ajouter</button><button onClick={()=>setShowAdd(false)} className="h-8 px-4 rounded-lg border border-gray-200 text-xs text-muted-foreground">Annuler</button></div>
+        </div>
+      )}
+      <div className="space-y-5">{categories.map((cat)=>{ const items=grouped[cat]; if(!items?.length) return null; return (
+        <div key={cat}><div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{cat}</span><div className="flex-1 h-px bg-gray-100"/></div>
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">{items.map((t,i)=>(
+          <div key={t.id ?? i} className={`flex items-center px-4 py-3.5 ${i<items.length-1?"border-b border-gray-50":""} hover:bg-gray-50 group`}>
+            <div className="flex-1"><div className="text-sm font-medium">{t.service}</div><div className="text-xs text-muted-foreground">{t.unit}</div></div>
+            {editing===t.id?<div className="flex items-center gap-2"><input type="number" value={editVal} onChange={(e)=>setEditVal(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&saveEdit(t)} autoFocus className="w-24 h-8 px-2 rounded-lg border border-emerald-300 text-sm text-right focus:outline-none"/><span className="text-sm text-muted-foreground">€</span><button onClick={()=>saveEdit(t)} className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center"><Check className="w-3.5 h-3.5"/></button><button onClick={()=>setEditing(null)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground"><X className="w-3.5 h-3.5"/></button></div>
+            :<div className="flex items-center gap-3"><span className="text-base font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{t.price} €</span><button onClick={()=>{setEditing(t.id!);setEditVal(String(t.price));}} className="opacity-0 group-hover:opacity-100 text-xs text-primary hover:underline transition-opacity">Modifier</button></div>}
+          </div>
+        ))}
+        </div></div>
+      );})}
+      </div>
+      <div className="mt-6 p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-sm text-emerald-800"><strong>Synchronisation automatique.</strong> Vos tarifs alimentent le moteur IA pour les estimations clients.</div>
+    </div>
+  );
+}
+
+// ─── Tech Agenda ──────────────────────────────────────────────────────────────
+
+const DAY_NAMES = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+const WEEK_DAYS_FR = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+
+function TechAgenda() {
+  const today = new Date();
+  const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [selectedDay, setSelectedDay] = useState(today.getDate());
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [selectedAppt, setSelectedAppt] = useState<Appointment|null>(null);
+  const [actualPrice, setActualPrice] = useState("");
+  const [caseDesc, setCaseDesc] = useState("");
+  const [priceSaved, setPriceSaved] = useState(false);
+
+  useEffect(() => {
+    api.get("/appointments").then((res) => setAppointments(res.data.map(mapAppointment))).catch(console.error);
+    api.get("/blocked-slots").then((res) => setBlockedSlots(res.data.map(mapBlockedSlot))).catch(console.error);
+  }, []);
+
+  const year = currentMonth.getFullYear(); const month = currentMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const calDays: (number|null)[] = [];
+  const monthStartOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+  for (let i = 0; i < monthStartOffset; i++) calDays.push(null);
+  for(let d=1;d<=daysInMonth;d++) calDays.push(d);
+
+  function changeMonth(delta: number) {
+    const next = new Date(year, month + delta, 1);
+    setCurrentMonth(next);
+    const maxDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    setSelectedDay((day) => Math.min(day, maxDay));
+  }
+
+  function dateStr(day: number) { return `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; }
+  function apptForDay(day: number) { return appointments.filter((a)=>String(a.date).slice(0,10)===dateStr(day)); }
+  function isBlockedDay(day: number) {
+    const dow=(new Date(year,month,day).getDay()+6)%7;
+    return blockedSlots.some((b)=>(
+      b.type==="weekly"&&b.weekDays?.includes(dow)
+    ) || (
+      b.type==="specific"&&String(b.date).slice(0,10)===dateStr(day)
+    ));
+  }
+  function dayColor(day: number) {
+    if(isBlockedDay(day)) return "bg-gray-100 border-gray-300 text-gray-400";
+    const apts=apptForDay(day);
+    if(!apts.length) return "bg-white border-gray-200 text-foreground hover:border-blue-300";
+    if(apts.every((a)=>a.status==="completed")) return "bg-emerald-100 border-emerald-400 text-emerald-800";
+    if(apts.some((a)=>a.status==="confirmed"||a.status==="pending")) return "bg-blue-100 border-blue-400 text-blue-800";
+    return "bg-white border-gray-200 text-foreground";
+  }
+
+  async function savePrice() {
+    if(!selectedAppt||!actualPrice) return;
+    try {
+      const { data } = await api.patch(`/appointments/${selectedAppt.id}`, {
+        status: "completed",
+        actual_price: parseFloat(actualPrice),
+        case_description: caseDesc,
+      });
+      setAppointments((apps)=>apps.map((a)=>a.id===selectedAppt.id?mapAppointment(data):a));
+      setPriceSaved(true);
+      setTimeout(()=>{setShowPriceModal(false);setActualPrice("");setCaseDesc("");setPriceSaved(false);},1200);
+    } catch (err) { console.error(err); }
+  }
+
+  async function addBlockedSlot(b: Omit<BlockedSlot,"id">) {
+    try {
+      const { data } = await api.post("/blocked-slots", b);
+      setBlockedSlots((s)=>[...s, mapBlockedSlot(data)]);
+    } catch (err) { console.error(err); }
+    setShowBlockModal(false);
+  }
+
+  async function removeBlockedSlot(id: number) {
+    setBlockedSlots((s)=>s.filter((x)=>x.id!==id));
+    try { await api.delete(`/blocked-slots/${id}`); } catch (err) { console.error(err); }
+  }
+
+  function callClient(appt: Appointment) {
+    if (!appt.clientPhone) {
+      alert("Aucun numéro de téléphone enregistré pour ce client.");
+      return;
+    }
+    window.location.href = `tel:${appt.clientPhone}`;
+  }
+
+  function openDirections(appt: Appointment) {
+    const destination = encodeURIComponent(appt.address || appt.client || "");
+    if (!destination) {
+      alert("Aucune adresse enregistrée pour ce rendez-vous.");
+      return;
+    }
+    window.open(`https://www.google.com/maps/search/?api=1&query=${destination}`, "_blank", "noopener,noreferrer");
+  }
+
+  const dayApts = apptForDay(selectedDay);
+  const ss: Record<string,{dot:string;badge:string;label:string}> = { confirmed:{dot:"bg-blue-500",badge:"bg-blue-50 text-blue-700 border-blue-100",label:"Confirmé"}, pending:{dot:"bg-amber-500",badge:"bg-amber-50 text-amber-700 border-amber-100",label:"En attente"}, completed:{dot:"bg-emerald-500",badge:"bg-emerald-50 text-emerald-700 border-emerald-100",label:"Terminé"}, cancelled:{dot:"bg-red-400",badge:"bg-red-50 text-red-700 border-red-100",label:"Annulé"} };
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      <div className="grid md:grid-cols-[380px_1fr] gap-6">
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4"><h3 className="font-bold capitalize" style={{ fontFamily:"Onest,sans-serif" }}>{currentMonth.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}</h3><div className="flex gap-1"><button onClick={()=>changeMonth(-1)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground hover:bg-gray-50"><ChevronLeft className="w-4 h-4"/></button><button onClick={()=>changeMonth(1)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground hover:bg-gray-50"><ChevronRight className="w-4 h-4"/></button></div></div>
+            <div className="grid grid-cols-7 gap-1 mb-1">{DAY_NAMES.map((d,i)=><div key={i} className="text-center text-xs font-medium text-muted-foreground py-1">{d}</div>)}</div>
+            <div className="grid grid-cols-7 gap-1">{calDays.map((day,i)=>{
+              if(!day) return <div key={i}/>;
+              const isSel=day===selectedDay; const isToday=day===today.getDate()&&month===today.getMonth()&&year===today.getFullYear();
+              return <button key={i} onClick={()=>!isBlockedDay(day)&&setSelectedDay(day)} className={`aspect-square rounded-lg border text-xs font-medium transition-all relative ${dayColor(day)} ${isSel?"ring-2 ring-primary ring-offset-1":""} ${isToday?"font-black":""}`}>{day}{apptForDay(day).length>0&&!isBlockedDay(day)&&<span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-current opacity-70"/>}</button>;
+            })}</div>
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">{[["bg-emerald-100 border-emerald-400","Terminé"],["bg-blue-100 border-blue-400","Prévu"],["bg-gray-100 border-gray-300","Indisponible"]].map(([cls,l])=><div key={l} className="flex items-center gap-2 text-xs"><div className={`w-4 h-4 rounded border ${cls}`}/><span className="text-muted-foreground">{l}</span></div>)}</div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold">Indisponibilités</div><button onClick={()=>setShowBlockModal(true)} className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200"><Plus className="w-3 h-3"/>Ajouter</button></div>
+            <div className="space-y-2">
+              {blockedSlots.map((b)=><div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100"><BanIcon className="w-4 h-4 text-gray-400 shrink-0"/><div className="flex-1 min-w-0"><div className="text-xs font-medium truncate">{b.label}</div><div className="text-xs text-muted-foreground">{b.type==="daily"?`Tous les jours ${b.startTime}–${b.endTime}`:b.type==="weekly"?`${b.weekDays?.map((d)=>WEEK_DAYS_FR[d]).join(", ")}`:b.date}</div></div><button onClick={()=>removeBlockedSlot(b.id)} className="text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5"/></button></div>)}
+              {blockedSlots.length===0&&<div className="text-xs text-muted-foreground text-center py-2">Aucune indisponibilité</div>}
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className="mb-4"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{new Date(year,month,selectedDay).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</h2><p className="text-sm text-muted-foreground">{dayApts.length} rendez-vous{isBlockedDay(selectedDay)&&" · Jour indisponible"}</p></div>
+          {isBlockedDay(selectedDay)&&<div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 flex items-center gap-3 text-sm text-gray-600"><BanIcon className="w-5 h-5 text-gray-400 shrink-0"/>Ce jour est marqué comme indisponible — aucun lead reçu.</div>}
+          {dayApts.length===0&&!isBlockedDay(selectedDay)?<div className="bg-white rounded-xl border border-gray-100 p-12 text-center shadow-sm"><Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40"/><div className="text-sm text-muted-foreground">Aucun rendez-vous ce jour</div></div>:(
+            <div className="space-y-3">{dayApts.map((appt)=>{ const s=ss[appt.status]; return (
+              <div key={appt.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex gap-4">
+                <div className="text-center w-16 shrink-0"><div className="text-sm font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{appt.time}</div><div className="text-xs text-muted-foreground">{appt.duration}</div><div className={`w-2.5 h-2.5 rounded-full mx-auto mt-2 ${s.dot}`}/></div>
+                <div className="w-px bg-gray-100 self-stretch"/>
+                <div className="flex-1">
+                  <div className="flex items-start justify-between"><div><div className="font-semibold text-sm">{appt.service}</div><div className="text-sm mt-0.5">{appt.client}</div></div><span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${s.badge}`}>{s.label}</span></div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2"><MapPin className="w-3 h-3"/>{appt.address}</div>
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="text-sm mb-2"><span className="text-muted-foreground">Estimé : </span><span className="font-bold">{appt.estimatedPrice} €</span></div>
+                    {appt.status==="completed"&&appt.actualPrice?<div><div className="text-sm mb-1"><span className="text-muted-foreground">Réel : </span><span className="font-bold text-emerald-600">{appt.actualPrice} €</span></div>{appt.caseDescription&&<div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded-lg mt-1">{appt.caseDescription}</div>}</div>
+                    :appt.status==="confirmed"?<button onClick={()=>{setSelectedAppt(appt);setShowPriceModal(true);}} className="text-xs text-emerald-600 hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3"/>Saisir le prix réel après intervention</button>:null}
+                  </div>
+                  <div className="flex gap-2 mt-3"><button onClick={()=>callClient(appt)} className="h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200 flex items-center gap-1.5"><Phone className="w-3 h-3"/>Appeler</button><button onClick={()=>openDirections(appt)} className="h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200 flex items-center gap-1.5"><MapPin className="w-3 h-3"/>Itinéraire</button></div>
+                </div>
+              </div>
+            );})}
+            </div>
+          )}
+        </div>
+      </div>
+      {showBlockModal&&<BlockSlotModal onClose={()=>setShowBlockModal(false)} onSave={addBlockedSlot}/>}
+      {showPriceModal&&selectedAppt&&(
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
+            <h3 className="text-lg font-bold mb-4" style={{ fontFamily:"Onest,sans-serif" }}>Finaliser l'intervention</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-3 text-sm"><div><div className="text-xs text-muted-foreground">Client</div><div className="font-medium">{selectedAppt.client}</div></div><div><div className="text-xs text-muted-foreground">Prix estimé</div><div className="font-medium">{selectedAppt.estimatedPrice} €</div></div></div>
+              <div><label className="block text-xs font-medium mb-2">Prix réel facturé <span className="text-red-500">*</span></label><input type="number" placeholder="0" value={actualPrice} onChange={(e)=>setActualPrice(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+              <div><label className="block text-xs font-medium mb-2">Description du cas <span className="text-muted-foreground font-normal">(enrichit la base IA)</span></label><textarea placeholder="Ex : Compresseur HS remplacé, recharge R32…" value={caseDesc} onChange={(e)=>setCaseDesc(e.target.value)} className="w-full h-24 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400 resize-none"/><div className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><TrendingUp className="w-3 h-3"/>Améliore les futures estimations IA</div></div>
+              {priceSaved?<div className="flex items-center justify-center gap-2 h-10 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>Enregistré !</div>:<div className="flex gap-2"><button onClick={savePrice} disabled={!actualPrice} className="flex-1 h-10 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 disabled:opacity-40">Enregistrer</button><button onClick={()=>setShowPriceModal(false)} className="h-10 px-4 rounded-lg border border-gray-200 text-sm text-muted-foreground">Annuler</button></div>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Block Slot Modal ─────────────────────────────────────────────────────────
+
+function BlockSlotModal({ onClose, onSave }: { onClose: ()=>void; onSave: (b: Omit<BlockedSlot,"id">)=>void }) {
+  const [type, setType] = useState<"specific"|"daily"|"weekly">("daily");
+  const [date, setDate] = useState(""); const [weekDays, setWeekDays] = useState<number[]>([]);
+  const [startTime, setStartTime] = useState("20:00"); const [endTime, setEndTime] = useState("08:00"); const [label, setLabel] = useState("");
+  const quick = [{label:"Nuit (20h–8h)",type:"daily" as const,startTime:"20:00",endTime:"08:00"},{label:"Week-end",type:"weekly" as const,weekDays:[5,6],startTime:"00:00",endTime:"23:59"},{label:"Vendredi PM",type:"weekly" as const,weekDays:[4],startTime:"12:00",endTime:"18:00"}];
+  function toggleDay(d: number){setWeekDays((p)=>p.includes(d)?p.filter((x)=>x!==d):[...p,d]);}
+  function submit(){onSave({type,date:type==="specific"?date:undefined,weekDays:type==="weekly"?weekDays:undefined,startTime,endTime,label:label||(type==="daily"?`Nuit ${startTime}–${endTime}`:type==="weekly"?"Indisponible":date)} as Omit<BlockedSlot,"id">);}
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e)=>e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Bloquer un créneau</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
+        <div className="mb-4"><div className="text-xs font-medium text-muted-foreground mb-2">Raccourcis rapides</div><div className="flex flex-wrap gap-2">{quick.map((q)=><button key={q.label} onClick={()=>{setType(q.type);if((q as any).weekDays)setWeekDays((q as any).weekDays);setStartTime(q.startTime);setEndTime(q.endTime);setLabel(q.label);}} className="px-3 py-1.5 rounded-full border border-gray-200 text-xs hover:border-blue-400 hover:bg-blue-50">{q.label}</button>)}</div></div>
+        <div className="space-y-4">
+          <div><label className="block text-xs font-medium mb-2">Type</label><div className="grid grid-cols-3 gap-2">{([["specific","Date précise"],["daily","Tous les jours"],["weekly","Jours semaine"]] as const).map(([v,l])=><button key={v} onClick={()=>setType(v)} className={`py-2 px-3 rounded-lg border text-xs font-medium ${type===v?"border-blue-400 bg-blue-50 text-blue-700":"border-gray-200 text-muted-foreground"}`}>{l}</button>)}</div></div>
+          {type==="specific"&&<div><label className="block text-xs font-medium mb-1.5">Date</label><input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>}
+          {type==="weekly"&&<div><label className="block text-xs font-medium mb-2">Jours</label><div className="flex gap-1">{WEEK_DAYS_FR.map((d,i)=><button key={i} onClick={()=>toggleDay(i)} className={`flex-1 py-1.5 rounded-lg border text-xs font-medium ${weekDays.includes(i)?"border-blue-400 bg-blue-50 text-blue-700":"border-gray-200 text-muted-foreground"}`}>{d.slice(0,3)}</button>)}</div></div>}
+          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-medium mb-1.5">Début</label><input type="time" value={startTime} onChange={(e)=>setStartTime(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div><div><label className="block text-xs font-medium mb-1.5">Fin</label><input type="time" value={endTime} onChange={(e)=>setEndTime(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div></div>
+          <div><label className="block text-xs font-medium mb-1.5">Motif (optionnel)</label><input placeholder="Formation, travail personnel…" value={label} onChange={(e)=>setLabel(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
+          <div className="flex gap-2"><button onClick={submit} className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90">Bloquer ce créneau</button><button onClick={onClose} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">Annuler</button></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const [view, setView] = useState<View>("home");
+  const [role, setRole] = useState<Role>("client");
+  const [user, setUser] = useState<AppUser|null>(null);
+  const [location, setLocation] = useState<UserLocation|null>(null);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [booting, setBooting] = useState(true);
+
+  // Auto-login si un token valide est déjà en localStorage
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) { setBooting(false); return; }
+    api.get("/me")
+      .then((res) => {
+        const currentUser = res.data.user ?? res.data;
+        setUser(currentUser);
+        setRole(currentUser.role);
+        setView(currentUser.role === "client" ? "client" : "tech");
+      })
+      .catch(() => localStorage.removeItem("token"))
+      .finally(() => setBooting(false));
+  }, []);
+
+  // Les techniciens sont utilisés par le client (recherche/chat) — chargés une fois connecté
+  useEffect(() => {
+    if (view !== "client" && view !== "tech") return;
+    api.get("/technicians", {
+      params: location ? { lat: location.lat, lng: location.lng } : undefined,
+    }).then((res) => setTechnicians(res.data.map(mapTechnician))).catch(console.error);
+  }, [view, location]);
+
+  function selectRole(r: Role){setRole(r);setView("auth");}
+  function handleLogin(u: AppUser){setUser(u);setView("location");}
+  async function handleLocation(loc: UserLocation | null){
+    setLocation(loc);
+    if (loc && user) {
+      try {
+        const { data } = await api.patch(`/users/${user.id}`, {
+          city: loc.city,
+          lat: loc.lat,
+          lng: loc.lng,
+        });
+        setUser(data);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    setView(role==="client"?"client":"tech");
+  }
+  function logout(){ localStorage.removeItem("token"); setUser(null);setLocation(null);setView("home"); }
+  function updateUser(u: AppUser){setUser(u);}
+
+  if (booting) {
+    return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"/></div>;
+  }
+
+  return (
+    <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
+      <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
+      {view==="home"&&<Landing onSelect={selectRole}/>}
+      {view==="auth"&&<AuthForm role={role} onBack={()=>setView("home")} onLogin={handleLogin}/>}
+      {view==="location"&&<LocationModal role={role} onDone={handleLocation}/>}
+      {view==="client"&&user&&<ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser}/>}
+      {view==="tech"&&user&&<TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser}/>}
+    </div>
+  );
+}
