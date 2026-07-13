@@ -4,6 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Clock, DollarSign, FileText, LogOut, 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
+import api from '../lib/api'
 
 const INITIAL_LEADS = [
   { id: 1, client: 'Nadia K.', problem: 'Climatiseur Daikin split ne refroidit plus', price: 185, confidence: 82, time: 'Il y a 12 min', status: 'new', city: 'Alger Centre', faultType: 'Climatisation' },
@@ -100,22 +101,24 @@ export default function TechnicianDashboard({ user, setUser, onLogout }) {
   ])
 
   useEffect(() => {
-    const fetchPriceRules = async () => {
+    const fetchTarifs = async () => {
       try {
-        const token = localStorage.getItem('token')
-        const response = await fetch('http://localhost:8000/technician/price-rules', { headers: { Authorization: `Bearer ${token}` } })
-        if (response.ok) {
-          const data = await response.json()
-          if (Array.isArray(data.rules) && data.rules.length > 0) {
-            setTarifs(data.rules.map((rule) => ({ service: rule.service_type, unit: 'Forfait', price: Number(rule.price_dt), category: 'Base' })))
-          }
+        const { data } = await api.get('/tarifs')
+        if (Array.isArray(data) && data.length > 0) {
+          setTarifs(data.map((item) => ({
+            id: item.id,
+            service: item.service,
+            unit: item.unit || '',
+            price: Number(item.price),
+            category: item.category || 'Base',
+          })))
         }
       } catch {
-        // fallback demo data stays visible
+        // fallback data stays visible while the technician has no saved tariffs
       }
     }
 
-    fetchPriceRules()
+    fetchTarifs()
   }, [])
 
   const unread = notifications.filter((notification) => !notification.read).length

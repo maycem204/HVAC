@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
-import * as XLSX from "xlsx";
 import {
   MessageSquare, Calendar, MapPin, Star, Send, ChevronRight, LogOut, Zap,
   User, Wrench, Phone, Clock, CheckCircle2, Bell, TrendingUp, DollarSign,
@@ -10,13 +9,16 @@ import {
   ChevronDown, Pencil, Save, Info,
 } from "lucide-react";
 import api from "../lib/api";
+import TechnicianMap from "./TechnicianMap";
+import ConversationsPanel from "./ConversationsPanel";
+import { disconnectRealtime, realtimeSocket } from "../lib/socket";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Role = "client" | "technician";
 type View = "home" | "auth" | "location" | "client" | "tech";
-type ClientTab = "chat" | "rdv" | "map";
-type TechTab = "leads" | "tarifs" | "agenda";
+type ClientTab = "chat" | "rdv" | "map" | "messages";
+type TechTab = "leads" | "tarifs" | "agenda" | "messages";
 type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
 type PriceDecision = "accept" | "negotiate" | "decline" | null;
 
@@ -25,7 +27,7 @@ interface ChatMsg { role: "bot" | "user"; text: string; }
 interface UserLocation { lat: number; lng: number; city: string; district: string; }
 
 interface Notification {
-  id: number; type: "lead" | "rdv" | "price" | "rating" | "system" | "reassign";
+  id: number; type: "lead" | "rdv" | "price" | "rating" | "system" | "reassign" | "message";
   title: string; message: string; time: string; read: boolean;
 }
 
@@ -43,9 +45,10 @@ interface PriceItem { id?: number; service: string; unit: string; price: number;
 
 interface Technician {
   id: number; name: string; specialty: string; specializations: string[];
-  rating: number; reviews: number; distanceKm: number;
+  rating: number; reviews: number; distanceKm: number | null;
   available: boolean; price: string; response: string; tags: string[];
   avatar: string; color: string; lat: number; lng: number;
+  canRate: boolean; myRating?: number;
 }
 
 interface BlockedSlot {
@@ -73,14 +76,6 @@ const FAULT_SPECIALIZATION_MAP: Record<string, string[]> = {
   "Ventilation": ["Ventilation", "Installation"],
   "Installation": ["Installation", "Multi-split"],
 };
-
-// Le flux conversationnel reste local (UX du chat) ; seul le calcul final du
-// devis part au backend (POST /chat/quote), voir ClientChat.
-const DEMO_CHAT_FLOWS = [
-  { trigger: ["clim","climatiseur","ac ","froid","refroidit","split"], response: "Je comprends — problème de climatisation. Quelle est la marque et l'âge approximatif de votre appareil ?" },
-  { trigger: ["daikin","mitsubishi","samsung","lg","carrier","hitachi"], response: "Merci. L'appareil est-il facilement accessible ? Est-ce urgent ?" },
-  { trigger: ["urgent","urgence","standard","normal","accessible","oui","yes"], response: null as unknown as string, quote: true },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -126,7 +121,7 @@ function mapTechnician(row: any): Technician {
     specializations: row.specializations ?? [],
     rating: Number(row.rating ?? 0),
     reviews: Number(row.reviews_count ?? row.reviews ?? 0),
-    distanceKm: Number(row.distance_km ?? row.distanceKm ?? 0),
+    distanceKm: row.distance_km == null ? null : Number(row.distance_km ?? row.distanceKm),
     available: !!row.available,
     price: row.price_label ?? row.price ?? "Sur devis",
     response: row.response_time ?? row.response ?? "—",
@@ -135,6 +130,8 @@ function mapTechnician(row: any): Technician {
     color: row.color ?? "bg-blue-500",
     lat: Number(row.lat ?? 0),
     lng: Number(row.lng ?? 0),
+    canRate: Boolean(row.can_rate ?? row.canRate),
+    myRating: row.my_rating == null ? undefined : Number(row.my_rating),
   };
 }
 
@@ -531,8 +528,9 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [contactedTechs, setContactedTechs] = useState<number[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [contactTechId, setContactTechId] = useState<number|null>(null);
   const unread = notifications.filter((n)=>!n.read).length;
-  const tabs = [{ id:"chat" as ClientTab,label:"Devis IA",icon:MessageSquare },{ id:"rdv" as ClientTab,label:"Rendez-vous",icon:Calendar },{ id:"map" as ClientTab,label:"Techniciens",icon:MapPin }];
+  const tabs = [{ id:"chat" as ClientTab,label:"Devis IA",icon:MessageSquare },{ id:"rdv" as ClientTab,label:"Rendez-vous",icon:Calendar },{ id:"map" as ClientTab,label:"Techniciens",icon:MapPin },{ id:"messages" as ClientTab,label:"Messages",icon:MessageCircle }];
 
   useEffect(() => {
     api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
@@ -540,6 +538,14 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
       setAppointments(res.data.map(mapAppointment));
       setContactedTechs(res.data.map((a: any) => a.technician_id));
     }).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const socket = realtimeSocket();
+    if (!socket) return;
+    const refresh = () => api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
+    socket.on("message:new", refresh);
+    return () => { socket.off("message:new", refresh); };
   }, []);
 
   function markRead(id: number) {
@@ -550,14 +556,8 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
     setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
     api.patch("/notifications/read-all").catch(console.error);
   }
-  async function contactTechnician(id: number) {
-    setContactedTechs((p) => (p.includes(id) ? p : [...p, id]));
-    try {
-      await api.post("/leads/contact", { technicianId: id });
-    } catch (err) {
-      console.error(err);
-    }
-  }
+  const contactTechnician = useCallback((id: number) => setContactTechId(id), []);
+  const markContacted = useCallback((id: number) => setContactedTechs((items) => items.includes(id) ? items : [...items, id]), []);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -574,27 +574,33 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
         <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-primary text-primary":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab==="chat"&&<ClientChat technicians={technicians} onContact={contactTechnician}/>}
-        {tab==="rdv"&&<ClientRdv technicians={technicians} appointments={appointments} setAppointments={setAppointments} contactedTechs={contactedTechs}/>}
+        {tab==="chat"&&<ClientChat technicians={technicians} location={location} onContact={contactTechnician}/>}
+        {tab==="rdv"&&(
+          <ClientRdv technicians={technicians} appointments={appointments} setAppointments={setAppointments}/>
+        )}
         {tab==="map"&&<ClientMap technicians={technicians} location={location} contactedTechs={contactedTechs} onContact={contactTechnician}/>}
+        {tab==="messages"&&<ConversationsPanel currentUserId={user.id} onContacted={markContacted}/>}
       </div>
       {notifOpen&&<NotificationPanel notifications={notifications} onRead={markRead} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
-      {profileOpen&&<ProfileModal user={user} role="client" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
+      {profileOpen&&(
+        <ProfileModal user={user} role="client" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>
+      )}
+      {contactTechId!=null&&(
+        <ConversationsPanel currentUserId={user.id} initialTechnician={technicians.find((technician)=>technician.id===contactTechId) ?? null} onContacted={markContacted} onClose={()=>setContactTechId(null)}/>
+      )}
     </div>
   );
 }
 
 // ─── Client Chat ──────────────────────────────────────────────────────────────
-// Le devis n'est plus calculé en dur (prix fixe 187 €) : il part au backend
-// (POST /chat/quote) qui applique la grille tarifaire du technicien matché
-// (ou ton propre modèle de pricing).
+// Chaque message part au backend. Le fournisseur LLM actif mène la clarification et le moteur
+// déterministe produit le devis dès que les informations sont suffisantes.
 
-function ClientChat({ technicians, onContact }: { technicians: Technician[]; onContact: (id: number) => void }) {
+function ClientChat({ technicians, location, onContact }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro." }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(0);
-  const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number }|null>(null);
+  const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number; currency:string; subtotal:number; minimumAdjustment:number }|null>(null);
   const [priceDecision, setPriceDecision] = useState<PriceDecision>(null);
   const [counterPrice, setCounterPrice] = useState("");
   const [counterSent, setCounterSent] = useState(false);
@@ -623,26 +629,29 @@ function ClientChat({ technicians, onContact }: { technicians: Technician[]; onC
   async function send(text: string) {
     if (loading||!text.trim()) return;
     const nextMessages = [...messages, { role:"user" as const, text }];
-    setMessages(nextMessages); setInput(""); setLoading(true);
-    const flow = DEMO_CHAT_FLOWS[step];
-    if (flow?.quote) {
-      setMessages((m)=>[...m,{role:"bot",text:"Paramètres extraits — calcul du devis en cours…"}]);
-      try {
-        const { data } = await api.post("/chat/quote", { messages: nextMessages, faultType });
-        setQuote({ price: data.price, low: data.low, high: data.high, conf: data.confidence });
-      } catch (err) {
-        console.error(err);
-        setMessages((m)=>[...m,{role:"bot",text:"Désolé, impossible de calculer le devis pour le moment."}]);
-      } finally {
-        setLoading(false);
+    setMessages(nextMessages); setInput(""); setLoading(true); setQuote(null); setPriceDecision(null);
+    try {
+      const { data } = await api.post("/api/pricing/quote", {
+        text,
+        history: nextMessages.slice(0, -1),
+        location: location ? { city: location.city, lat: location.lat, lng: location.lng } : undefined,
+      });
+      if (data.status === "quote") {
+        setQuote({ price: data.calculation.total, low: data.calculation.range.min, high: data.calculation.range.max, conf: Math.round(data.confidence * 100), currency: data.calculation.currency, subtotal: data.calculation.subtotal ?? data.calculation.total, minimumAdjustment: data.calculation.service_minimum_adjustment ?? 0 });
       }
-    } else {
-      setTimeout(() => {
-        setMessages((m)=>[...m,{role:"bot",text:flow?.response??"L'appareil est-il facilement accessible ? (oui/non)"}]);
-        setLoading(false);
-      }, 400);
+      const reply = data.question || data.message;
+      setMessages((m)=>[...m,{role:"bot",text:reply || "Pouvez-vous préciser votre problème HVAC ?"}]);
+    } catch (err: any) {
+      console.error(err);
+      const serverMessage = err?.response?.data?.error;
+      const status = Number(err?.response?.status || 0);
+      const reply = status > 0 && status < 500 && serverMessage
+        ? serverMessage
+        : "Désolé, le service de devis est momentanément indisponible.";
+      setMessages((m)=>[...m,{role:"bot",text:reply}]);
+    } finally {
+      setLoading(false);
     }
-    setStep((s)=>Math.min(s+1,DEMO_CHAT_FLOWS.length-1));
   }
 
   function handlePriceDecision(d: PriceDecision) {
@@ -653,7 +662,7 @@ function ClientChat({ technicians, onContact }: { technicians: Technician[]; onC
 
   async function sendCounter() {
     if (!counterPrice) return; setCounterSent(true);
-    setMessages((m)=>[...m,{role:"user",text:`Je propose ${counterPrice} €.`},{role:"bot",text:`Votre proposition de ${counterPrice} € est transmise aux techniciens disponibles. Nous vous recontactons sous 30 minutes.`}]);
+    setMessages((m)=>[...m,{role:"user",text:`Je propose ${counterPrice} ${quote?.currency || ""}.`},{role:"bot",text:`Votre proposition de ${counterPrice} ${quote?.currency || ""} est transmise aux techniciens disponibles. Nous vous recontactons sous 30 minutes.`}]);
     setPriceDecision(null);
     try { await api.post("/chat/counter-offer", { amount: Number(counterPrice), faultType }); } catch (err) { console.error(err); }
   }
@@ -696,8 +705,24 @@ function ClientChat({ technicians, onContact }: { technicians: Technician[]; onC
         {quote&&(
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
-              <div className="flex items-start justify-between"><div><div className="text-xs font-medium opacity-80 mb-1">ESTIMATION — {faultType.toUpperCase()}</div><div className="flex items-baseline gap-2"><span className="text-4xl font-black" style={{ fontFamily:"Onest,sans-serif" }}>{quote.price} €</span><span className="text-sm opacity-75">{quote.low}–{quote.high} €</span></div></div><div className="text-right text-xs opacity-80"><div>Confiance</div><div className="text-lg font-bold opacity-100">{quote.conf}%</div></div></div>
-              <div className="mt-2 flex items-center gap-2"><div className="flex-1 h-1 bg-white/20 rounded-full"><div className="h-1 bg-white rounded-full" style={{ width:`${quote.conf}%` }}/></div></div>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-xs font-medium opacity-80 mb-1">ESTIMATION — {faultType.toUpperCase()}</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-black" style={{ fontFamily:"Onest,sans-serif" }}>{quote.price.toLocaleString("fr-FR")} {quote.currency}</span>
+                    <span className="text-sm opacity-75">{quote.low.toLocaleString("fr-FR")}–{quote.high.toLocaleString("fr-FR")} {quote.currency}</span>
+                  </div>
+                </div>
+                <div className="text-right text-xs opacity-80">
+                  <div>Confiance</div><div className="text-lg font-bold opacity-100">{quote.conf}%</div>
+                </div>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="flex-1 h-1 bg-white/20 rounded-full">
+                  <div className="h-1 bg-white rounded-full" style={{ width:`${quote.conf}%` }}/>
+                </div>
+              </div>
+              {quote.minimumAdjustment > 0 && <div className="mt-2 text-xs opacity-80">Minimum local de déplacement et d’intervention inclus.</div>}
             </div>
             {!priceDecision&&!counterSent&&(
               <div className="px-4 pb-4 border-t border-gray-100 pt-4">
@@ -713,7 +738,7 @@ function ClientChat({ technicians, onContact }: { technicians: Technician[]; onC
               <div className="px-4 pb-4 border-t border-gray-100 pt-4">
                 <div className="text-sm font-medium mb-2">Votre budget maximum</div>
                 <div className="flex gap-2">
-                  <div className="relative flex-1"><input type="number" placeholder={String(quote.price-20)} value={counterPrice} onChange={(e)=>setCounterPrice(e.target.value)} className="w-full h-10 px-3 pr-6 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">€</span></div>
+                  <div className="relative flex-1"><input type="number" placeholder={String(Math.max(0, Math.round(quote.price * 0.9)))} value={counterPrice} onChange={(e)=>setCounterPrice(e.target.value)} className="w-full h-10 px-3 pr-14 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{quote.currency}</span></div>
                   <button onClick={sendCounter} disabled={!counterPrice} className="h-10 px-4 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40">Envoyer</button>
                   <button onClick={()=>setPriceDecision(null)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm text-muted-foreground">✕</button>
                 </div>
@@ -732,7 +757,7 @@ function ClientChat({ technicians, onContact }: { technicians: Technician[]; onC
                   <button key={i} onClick={()=>setSelectedSlot(slot)} className={`w-full text-left p-3 rounded-xl border transition-all ${isSel?"border-primary bg-blue-50":"border-gray-200 hover:border-gray-300 bg-gray-50/50"}`}>
                     <div className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-full ${tech.color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{tech.avatar}</div>
-                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {tech.distanceKm} km · {tech.response}</div></div>
+                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {tech.distanceKm == null ? "distance indisponible" : `${tech.distanceKm.toFixed(1)} km`} · {tech.response}</div></div>
                       {isSel&&<Check className="w-4 h-4 text-primary shrink-0"/>}
                     </div>
                   </button>
@@ -761,8 +786,8 @@ function ClientChat({ technicians, onContact }: { technicians: Technician[]; onC
 
 // ─── Client RDV ───────────────────────────────────────────────────────────────
 
-function ClientRdv({ technicians, appointments, setAppointments, contactedTechs }:
-  { technicians: Technician[]; appointments: Appointment[]; setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>>; contactedTechs: number[] }) {
+function ClientRdv({ technicians, appointments, setAppointments }:
+  { technicians: Technician[]; appointments: Appointment[]; setAppointments: React.Dispatch<React.SetStateAction<Appointment[]>> }) {
   const [selectedAppt, setSelectedAppt] = useState<Appointment|null>(null);
   const [feedbackAppt, setFeedbackAppt] = useState<number|null>(null);
   const [feedback, setFeedback] = useState({ rating:0, comment:"" });
@@ -782,7 +807,7 @@ function ClientRdv({ technicians, appointments, setAppointments, contactedTechs 
     setFeedbackAppt(null); setFeedback({rating:0,comment:""});
   }
 
-  const canRate = (appt: Appointment) => appt.status==="completed" || contactedTechs.includes(appt.technicianId);
+  const canRate = (appt: Appointment) => appt.status==="completed";
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6 max-w-4xl mx-auto w-full">
       <h2 className="text-xl font-bold text-foreground mb-1" style={{ fontFamily:"Onest,sans-serif" }}>Mes rendez-vous</h2>
@@ -866,7 +891,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
   const [ratingTech, setRatingTech] = useState<number|null>(null);
   const [ratings, setRatings] = useState<Record<number,{rating:number;comment:string}>>({});
   const [ratingDraft, setRatingDraft] = useState({rating:0,comment:""});
-  const filtered = technicians.filter((t)=>(!showAvailOnly||t.available)&&(!filterSpec||t.specializations.includes(filterSpec))&&(!search||t.name.toLowerCase().includes(search.toLowerCase())||t.specializations.some((s)=>s.toLowerCase().includes(search.toLowerCase())))).sort((a,b)=>a.distanceKm-b.distanceKm);
+  const filtered = technicians.filter((t)=>(!showAvailOnly||t.available)&&(!filterSpec||t.specializations.includes(filterSpec))&&(!search||t.name.toLowerCase().includes(search.toLowerCase())||t.specializations.some((s)=>s.toLowerCase().includes(search.toLowerCase())))).sort((a,b)=>(a.distanceKm??Infinity)-(b.distanceKm??Infinity));
 
   async function submitRating(techId: number) {
     try {
@@ -890,7 +915,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
         <div className="flex-1 overflow-y-auto">
           {filtered.map((t)=>{
             const isContacted = contactedTechs.includes(t.id);
+            const ratingAllowed = t.canRate || isContacted;
             const existing = ratings[t.id];
+            const personalRating = existing?.rating ?? t.myRating;
             const isRating = ratingTech===t.id;
             return (
               <div key={t.id} className={`border-b border-gray-50 transition-colors ${selected===t.id?"bg-blue-50":"hover:bg-gray-50"}`}>
@@ -898,9 +925,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                   <div className="flex items-start gap-3">
                     <div className="relative"><Avatar initials={t.avatar} color={t.color}/>{t.available&&<span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-white"/>}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm} km</span></div>
+                      <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm == null ? "Distance indisponible" : `${t.distanceKm.toFixed(1)} km`}</span></div>
                       <div className="flex flex-wrap gap-1 mt-1">{t.specializations.slice(0,2).map((s)=><span key={s} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{s}</span>)}</div>
-                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className="w-3 h-3 text-amber-400 fill-amber-400"/><span className="text-xs font-medium">{existing?existing.rating:t.rating}</span><span className="text-xs text-muted-foreground">({t.reviews})</span></div><Badge color={t.available?"green":"gray"}>{t.available?"Disponible":"Indisponible"}</Badge>{isContacted&&<Badge color="blue">Contacté</Badge>}</div>
+                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className="w-3 h-3 text-amber-400 fill-amber-400"/><span className="text-xs font-medium">{t.rating}</span><span className="text-xs text-muted-foreground">({t.reviews})</span></div><Badge color={t.available?"green":"gray"}>{t.available?"Disponible":"Indisponible"}</Badge>{isContacted&&<Badge color="blue">Contacté</Badge>}</div>
                     </div>
                   </div>
                 </button>
@@ -910,8 +937,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                     <div className="text-xs font-medium text-primary">{t.price}</div>
                     <div className="flex flex-wrap gap-1">{t.tags.map((tag)=><span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">{tag}</span>)}</div>
                     <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">Contacter ce technicien</button>
-                    {!isRating&&<button onClick={()=>setRatingTech(t.id)} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{existing?`Votre note : ${existing.rating}/5`:"Évaluer ce technicien"}</button>}
-                    {isRating&&!existing&&(
+                    {ratingAllowed&&!isRating&&<button onClick={()=>{setRatingTech(t.id);setRatingDraft({rating:personalRating||0,comment:existing?.comment||""});}} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{personalRating?`Votre note : ${personalRating}/5 — modifier`:"Évaluer ce technicien"}</button>}
+                    {!ratingAllowed&&<div className="text-[11px] text-muted-foreground text-center">Contactez ce technicien pour pouvoir l’évaluer.</div>}
+                    {isRating&&ratingAllowed&&(
                       <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setRatingDraft((r)=>({...r,rating:s}))}><Star className={`w-5 h-5 ${s<=ratingDraft.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
                         <textarea value={ratingDraft.comment} onChange={(e)=>setRatingDraft((r)=>({...r,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-14 px-2 py-1.5 rounded-lg border border-gray-200 text-xs bg-white resize-none"/>
@@ -926,29 +954,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
         </div>
       </div>
 
-      <div className="flex-1 bg-gradient-to-br from-slate-100 to-blue-50 relative overflow-hidden">
-        <div className="absolute inset-0" style={{ backgroundImage:`repeating-linear-gradient(0deg,rgba(0,0,0,0.025) 0,rgba(0,0,0,0.025) 1px,transparent 1px,transparent 50px),repeating-linear-gradient(90deg,rgba(0,0,0,0.025) 0,rgba(0,0,0,0.025) 1px,transparent 1px,transparent 50px)` }}/>
-        <div className="absolute" style={{ top:"38%",left:"28%" }}>
-          <div className="relative -translate-x-1/2 -translate-y-1/2">
-            <div className="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center"><div className="w-2.5 h-2.5 rounded-full bg-white"/></div>
-            <div className="absolute inset-0 rounded-full bg-blue-400 animate-ping opacity-20"/>
-          </div>
-          <div className="absolute top-4 left-4 text-xs font-semibold bg-blue-600 text-white px-2 py-0.5 rounded-full shadow whitespace-nowrap">{location?.city??"Vous"}</div>
-        </div>
-        {technicians.map((t)=>(
-          <button key={t.id} onClick={()=>setSelected(selected===t.id?null:t.id)} className="absolute transform -translate-x-1/2 -translate-y-full hover:scale-110 transition-all" style={{ top:`${t.lat/5}%`,left:`${t.lng/5.5}%` }}>
-            <div className="flex flex-col items-center">
-              <div className={`w-10 h-10 rounded-full ${t.color} border-2 ${selected===t.id?"border-primary scale-110":"border-white"} shadow-md flex items-center justify-center text-white text-xs font-bold relative transition-all`}>
-                {t.avatar}
-                {!t.available&&<div className="absolute inset-0 rounded-full bg-black/30 flex items-center justify-center"><X className="w-4 h-4 text-white"/></div>}
-              </div>
-              <div className={`w-2.5 h-2.5 ${t.color} rotate-45 -mt-1.5 shadow`}/>
-            </div>
-            {t.available&&<div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-white shadow"/>}
-            {contactedTechs.includes(t.id)&&<div className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-blue-400 border-2 border-white shadow"/>}
-          </button>
-        ))}
-        <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5">
+      <div className="flex-1 min-h-[420px] relative overflow-hidden">
+        <TechnicianMap technicians={filtered} location={location} selectedId={selected} onSelect={setSelected} onContact={onContact}/>
+        <div className="absolute z-[1000] bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5 pointer-events-none">
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">Disponible</span></div>
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">Contacté</span></div>
           <div className="font-medium text-foreground pt-1 border-t border-gray-100">{technicians.filter((t)=>t.available).length} disponibles</div>
@@ -968,11 +976,19 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
-  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
+  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
 
   useEffect(() => {
     api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
     api.get("/technicians/me/stats").then((res) => setStats(res.data)).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const socket = realtimeSocket();
+    if (!socket) return;
+    const refresh = () => api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
+    socket.on("message:new", refresh);
+    return () => { socket.off("message:new", refresh); };
   }, []);
 
   function markRead(id: number) {
@@ -1001,6 +1017,7 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
       </div>
       <div className="flex-1 overflow-y-auto">
         {tab==="leads"&&<TechLeads/>}
+        {tab==="messages"&&<ConversationsPanel currentUserId={user.id}/>}
         {tab==="tarifs"&&<TechTarifs/>}
         {tab==="agenda"&&<TechAgenda/>}
       </div>
@@ -1097,16 +1114,17 @@ function TechTarifs() {
     const file = accepted[0]; if(!file) return;
     setUploadStatus("processing");
     const ext = file.name.split(".").pop()?.toLowerCase();
-    if (ext==="xlsx"||ext==="xls") {
+    if (ext==="csv" && file.size <= 1024 * 1024) {
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
-          const data = new Uint8Array(e.target?.result as ArrayBuffer);
-          const wb = XLSX.read(data, { type: "array" });
-          const sheet = wb.Sheets[wb.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+          const lines = String(e.target?.result || "").replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean).slice(0, 1001);
+          const delimiter = (lines[0]?.match(/;/g)?.length || 0) > (lines[0]?.match(/,/g)?.length || 0) ? ";" : ",";
+          const parseLine = (line: string) => line.split(delimiter).map((value) => value.trim().replace(/^"|"$/g, "").replace(/""/g, '"'));
+          const headers = parseLine(lines.shift() || "").map((header) => header.toLocaleLowerCase("fr"));
+          const rows = lines.map((line) => Object.fromEntries(parseLine(line).map((value, index) => [headers[index], value])));
           const extracted: PriceItem[] = rows
-            .map((r) => ({ service: r.Service||r.service||"", unit: r.Unit||r.unit||r.Unité||"", price: parseFloat(r.Price||r.price||r.Prix||0), category: r.Category||r.category||r.Catégorie||"Base" }))
+            .map((r) => ({ service: r.service||"", unit: r.unit||r["unité"]||"", price: parseFloat(r.price||r.prix||"0"), category: r.category||r["catégorie"]||"Base" }))
             .filter((i) => i.service && i.price);
           if (extracted.length === 0) { setUploadStatus("error"); return; }
           // Import en bulk côté backend, qui remplace/fusionne la grille du technicien
@@ -1117,13 +1135,13 @@ function TechTarifs() {
           setUploadStatus("error");
         }
       };
-      reader.readAsArrayBuffer(file);
+      reader.readAsText(file, "utf-8");
     } else {
       setUploadStatus("error");
     }
   },[]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept:{"application/vnd.ms-excel":[".xls"],"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":[".xlsx"]}, multiple:false });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept:{"text/csv":[".csv"]}, multiple:false, maxSize:1024*1024 });
 
   async function saveEdit(item: PriceItem) {
     const v = parseFloat(editVal);
@@ -1152,7 +1170,7 @@ function TechTarifs() {
       <div className="mb-6">
         <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${isDragActive?"border-emerald-400 bg-emerald-50":uploadStatus==="success"?"border-emerald-300 bg-emerald-50":uploadStatus==="error"?"border-red-300 bg-red-50":"border-gray-200 hover:border-emerald-300 bg-gray-50"}`}>
           <input {...getInputProps()}/>
-          {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?"Déposez ici":"Importez votre grille tarifaire"}</div><div className="text-xs text-muted-foreground">Excel .xlsx ou .xls</div></>}
+          {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?"Déposez ici":"Importez votre grille tarifaire"}</div><div className="text-xs text-muted-foreground">CSV UTF-8, 1 Mo maximum</div></>}
           {uploadStatus==="processing"&&<div className="flex flex-col items-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">Extraction en cours…</div></div>}
           {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">{tarifs.length} services importés</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">Importer un autre fichier</button></>}
           {uploadStatus==="error"&&<><AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400"/><div className="text-sm font-medium text-red-600 mb-2">Format non reconnu</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-primary hover:underline">Réessayer</button></>}
@@ -1399,6 +1417,11 @@ export default function App() {
         const currentUser = res.data.user ?? res.data;
         setUser(currentUser);
         setRole(currentUser.role);
+        const lat = Number(currentUser.lat);
+        const lng = Number(currentUser.lng);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+          setLocation({ lat, lng, city: currentUser.city || "Position du profil", district: currentUser.city || "" });
+        }
         setView(currentUser.role === "client" ? "client" : "tech");
       })
       .catch(() => localStorage.removeItem("token"))
@@ -1431,7 +1454,7 @@ export default function App() {
     }
     setView(role==="client"?"client":"tech");
   }
-  function logout(){ localStorage.removeItem("token"); setUser(null);setLocation(null);setView("home"); }
+  function logout(){ disconnectRealtime(); localStorage.removeItem("token"); setUser(null);setLocation(null);setView("home"); }
   function updateUser(u: AppUser){setUser(u);}
 
   if (booting) {

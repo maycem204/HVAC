@@ -1,24 +1,35 @@
 const auth = require("./middleware/auth");
+const { signToken, requireRole, verifyToken } = require("./middleware/auth");
+const http = require("http");
+const { Server } = require("socket.io");
 const express = require("express");
 const cors = require("cors");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-require("dotenv").config();
+const helmet = require("helmet");
+const { rateLimit } = require("express-rate-limit");
+const { port, corsOrigins, geocodingBaseUrl, geocodingUserAgent } = require("./env");
+const { hashPassword, verifyPassword } = require("./utils/password");
+const { forwardGeocode, reverseGeocode } = require("./services/geocoding");
 
 const pool = require("./db");
+const pricingRouter = require("./routes/pricing");
+const conversationsRouter = require("./routes/conversations");
+const { setRealtimeServer } = require("./realtime");
 
 const app = express();
 
+app.disable("x-powered-by");
+app.use(helmet({ referrerPolicy: { policy: "strict-origin-when-cross-origin" } }));
 app.use(cors({
-  origin: [
-    "http://localhost:5174",
-    "http://localhost:3000",
-    "http://127.0.0.1:5174",
-    "http://127.0.0.1:3000",
-  ],
+  origin: corsOrigins,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
+const publicLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false });
+const geocodeLimiter = rateLimit({ windowMs: 1000, limit: 1, standardHeaders: "draft-8", legacyHeaders: false });
+app.use(publicLimiter);
+app.use("/api/pricing", pricingRouter);
+app.use("/conversations", conversationsRouter);
 
 const CITY_COORDS = {
   alger: { lat: 36.7538, lng: 3.0588, city: "Alger" },
@@ -29,6 +40,9 @@ const CITY_COORDS = {
   oran: { lat: 35.6971, lng: -0.6308, city: "Oran" },
   constantine: { lat: 36.365, lng: 6.6147, city: "Constantine" },
   tunis: { lat: 36.8065, lng: 10.1815, city: "Tunis" },
+  sfax: { lat: 34.7406, lng: 10.7603, city: "Sfax" },
+  djerba: { lat: 33.8076, lng: 10.8451, city: "Djerba" },
+  "houmt souk": { lat: 33.8758, lng: 10.8575, city: "Houmt Souk" },
   casablanca: { lat: 33.5731, lng: -7.5898, city: "Casablanca" },
 };
 
@@ -43,11 +57,6 @@ function haversineKm(aLat, aLng, bLat, bLng) {
   return R * 2 * Math.atan2(Math.sqrt(s1 + s2), Math.sqrt(1 - s1 - s2));
 }
 
-function cityLookup(city = "") {
-  const key = String(city).trim().toLowerCase();
-  return CITY_COORDS[key] || { lat: 36.7538, lng: 3.0588, city: city || "Alger" };
-}
-
 async function ensureSchedulingColumns() {
   await pool.query(`
     ALTER TABLE leads
@@ -56,6 +65,82 @@ async function ensureSchedulingColumns() {
       ADD COLUMN IF NOT EXISTS address TEXT,
       ADD COLUMN IF NOT EXISTS appointment_id INT REFERENCES appointments(id)
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pricing_fallback_requests (
+      id BIGSERIAL PRIMARY KEY,
+      client_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      request_text TEXT NOT NULL,
+      extraction JSONB,
+      failure_code VARCHAR(80) NOT NULL,
+      confidence NUMERIC(6,5),
+      status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'assigned', 'resolved', 'cancelled')),
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pricing_fallback_pending
+      ON pricing_fallback_requests(status, created_at) WHERE status = 'pending';
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id BIGSERIAL PRIMARY KEY,
+      client_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      technician_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(client_id, technician_id),
+      CHECK (client_id <> technician_id)
+    );
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      id BIGSERIAL PRIMARY KEY,
+      conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      sender_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body VARCHAR(2000) NOT NULL CHECK (length(trim(body)) > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      read_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversation_messages_order
+      ON conversation_messages(conversation_id, created_at);
+    CREATE TABLE IF NOT EXISTS technician_ratings (
+      id BIGSERIAL PRIMARY KEY,
+      client_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      technician_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      comment VARCHAR(2000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(client_id, technician_id),
+      CHECK (client_id <> technician_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_technician_ratings_technician
+      ON technician_ratings(technician_id);
+    INSERT INTO technician_ratings(client_id, technician_id, rating, comment)
+    SELECT DISTINCT ON (client_id, technician_id) client_id, technician_id, rating, feedback
+    FROM appointments WHERE rating IS NOT NULL
+    ORDER BY client_id, technician_id, date DESC, time DESC
+    ON CONFLICT (client_id, technician_id) DO NOTHING;
+  `);
+}
+
+async function saveTechnicianRating(client, { clientId, technicianId, rating, comment }) {
+  await client.query(
+    `INSERT INTO technician_ratings (client_id, technician_id, rating, comment)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (client_id, technician_id) DO UPDATE SET
+       rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = now()`,
+    [clientId, technicianId, rating, comment]
+  );
+  const stats = await client.query(
+    `SELECT AVG(rating)::numeric(2,1) AS avg_rating, COUNT(*)::int AS reviews_count
+     FROM technician_ratings WHERE technician_id = $1`,
+    [technicianId]
+  );
+  await client.query(
+    `UPDATE technician_profiles SET rating = $1, reviews_count = $2 WHERE user_id = $3`,
+    [stats.rows[0].avg_rating || 0, stats.rows[0].reviews_count || 0, technicianId]
+  );
+  return { rating: Number(stats.rows[0].avg_rating || 0), reviews_count: Number(stats.rows[0].reviews_count || 0) };
 }
 
 function minutesOf(value) {
@@ -115,11 +200,15 @@ app.get("/test", (req, res) => {
 });
 
 /* ===================== REGISTER ===================== */
-app.post("/register", async (req, res) => {
+app.post("/register", authLimiter, async (req, res) => {
   try {
-    const { name, email, password, role, city, phone, address } = req.body;
+    const { name, email, password, role, city, phone, address } = req.body || {};
+    if (typeof name !== "string" || name.trim().length < 2 || name.length > 100) return res.status(400).json({ error: "Nom invalide" });
+    if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return res.status(400).json({ error: "Email invalide" });
+    if (typeof password !== "string" || password.length < 10 || password.length > 128) return res.status(400).json({ error: "Le mot de passe doit contenir entre 10 et 128 caractères" });
+    if (!['client', 'technician'].includes(role)) return res.status(400).json({ error: "Rôle invalide" });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await hashPassword(password);
 
     const result = await pool.query(
       `INSERT INTO users (name, email, password_hash, role, city, phone, address)
@@ -137,17 +226,20 @@ app.post("/register", async (req, res) => {
         [user.id]
       );
     }
-    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(user);
     res.json({ token, user });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.code === "23505") return res.status(409).json({ error: "Un compte existe déjà avec cet email" });
+    console.error(err);
+    res.status(500).json({ error: "Erreur interne" });
   }
 });
 
 /* ===================== LOGIN ===================== */
-app.post("/login", async (req, res) => {
+app.post("/login", authLimiter, async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password, role } = req.body || {};
+    if (typeof email !== "string" || typeof password !== "string") return res.status(400).json({ error: "Identifiants invalides" });
 
     const userResult = await pool.query(
       "SELECT * FROM users WHERE email = $1",
@@ -155,40 +247,40 @@ app.post("/login", async (req, res) => {
     );
 
     if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: "User not found" });
+      return res.status(401).json({ error: "Email ou mot de passe incorrect" });
     }
 
     const user = userResult.rows[0];
 
     // Vérifier si le rôle correspond
     if (role && user.role !== role) {
-      return res.status(400).json({ error: `Ce compte est un ${user.role}, pas un ${role}` });
+      return res.status(401).json({ error: "Email ou mot de passe incorrect" });
     }
 
-    const valid = await bcrypt.compare(password, user.password_hash);
+    const valid = await verifyPassword(password, user.password_hash);
 
     if (!valid) {
-      return res.status(400).json({ error: "Wrong password" });
+      return res.status(401).json({ error: "Email ou mot de passe incorrect" });
     }
 
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = signToken(user);
 
     const { password_hash, ...userWithoutPassword } = user;
     res.json({ token, user: userWithoutPassword });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Erreur interne" });
   }
 });
 
 /* ===================== TECHNICIANS ===================== */
-app.get("/technicians", async (req, res) => {
+app.get("/technicians", auth, async (req, res) => {
   try {
     const clientLat = req.query.lat != null ? Number(req.query.lat) : null;
     const clientLng = req.query.lng != null ? Number(req.query.lng) : null;
+    if ((clientLat != null || clientLng != null) && (!Number.isFinite(clientLat) || !Number.isFinite(clientLng) || Math.abs(clientLat) > 90 || Math.abs(clientLng) > 180)) {
+      return res.status(400).json({ error: "Coordonnées invalides" });
+    }
     const wantedSpecs = String(req.query.specializations || "")
       .split(",")
       .map((s) => s.trim())
@@ -198,18 +290,27 @@ app.get("/technicians", async (req, res) => {
       SELECT 
         u.id, u.name, u.city, u.lat, u.lng,
         t.specializations, t.rating, t.reviews_count,
-        t.available, t.response_time, t.radius_km
+        t.available, t.response_time, t.radius_km,
+        EXISTS (
+          SELECT 1 FROM appointments a
+          WHERE a.client_id = $1 AND a.technician_id = u.id AND a.status = 'completed'
+        ) OR EXISTS (
+          SELECT 1 FROM conversations c
+          WHERE c.client_id = $1 AND c.technician_id = u.id
+        ) AS can_rate,
+        (SELECT r.rating FROM technician_ratings r
+         WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating
       FROM users u
       JOIN technician_profiles t ON u.id = t.user_id
       WHERE u.role = 'technician'
-    `);
+    `, [req.user.id]);
 
     const technicians = result.rows
       .map((row) => {
         const distance = haversineKm(clientLat, clientLng, row.lat, row.lng);
         return {
           ...row,
-          distance_km: distance == null ? 999 : Number(distance.toFixed(1)),
+          distance_km: distance == null ? null : Number(distance.toFixed(1)),
           price_label: "Sur devis",
           tags: row.specializations || [],
           color: "bg-emerald-500",
@@ -228,7 +329,7 @@ app.get("/technicians", async (req, res) => {
   }
 });
 
-app.get("/technicians/me/stats", auth, async (req, res) => {
+app.get("/technicians/me/stats", auth, requireRole("technician"), async (req, res) => {
   try {
     const jobs = await pool.query(
       `SELECT COUNT(*)::int AS jobs, COALESCE(SUM(actual_price), 0)::float AS revenue
@@ -271,7 +372,7 @@ app.get("/technicians/:id", auth, async (req, res) => {
   }
 });
 
-app.patch("/technicians/:id", auth, async (req, res) => {
+app.patch("/technicians/:id", auth, requireRole("technician"), async (req, res) => {
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
     const { specializations = [], radius_km = 10, available = true } = req.body;
@@ -323,7 +424,9 @@ app.get("/me", auth, async (req, res) => {
     }
 
 
-    const user = result.rows[0]; const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' }); res.json({ token, user });
+    const user = result.rows[0];
+    const token = signToken(user);
+    res.json({ token, user });
 
 
   } catch (err) {
@@ -360,24 +463,35 @@ app.patch("/users/:id", auth, async (req, res) => {
   }
 });
 
-app.get("/geocode/forward", (req, res) => {
-  const place = cityLookup(req.query.city);
-  res.json({ ...place, district: place.city });
+app.get("/geocode/forward", auth, geocodeLimiter, async (req, res) => {
+  try {
+    const place = await forwardGeocode(req.query.city, { baseUrl: geocodingBaseUrl, userAgent: geocodingUserAgent });
+    if (!place) return res.status(404).json({ error: "Lieu introuvable" });
+    res.json(place);
+  } catch (error) {
+    const fallback = CITY_COORDS[String(req.query.city || "").trim().toLowerCase()];
+    if (fallback) return res.json({ ...fallback, district: fallback.city, fallback: true });
+    res.status(503).json({ error: "Service de localisation temporairement indisponible" });
+  }
 });
 
-app.get("/geocode/reverse", (req, res) => {
+app.get("/geocode/reverse", auth, geocodeLimiter, async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
-  let nearest = Object.values(CITY_COORDS)[0];
-  let best = Infinity;
-  for (const place of Object.values(CITY_COORDS)) {
-    const dist = haversineKm(lat, lng, place.lat, place.lng);
-    if (dist != null && dist < best) {
-      best = dist;
-      nearest = place;
+  try {
+    const place = await reverseGeocode(lat, lng, { baseUrl: geocodingBaseUrl, userAgent: geocodingUserAgent });
+    if (!place) return res.status(404).json({ error: "Lieu introuvable" });
+    res.json(place);
+  } catch (error) {
+    let nearest = null;
+    let best = Infinity;
+    for (const place of Object.values(CITY_COORDS)) {
+      const dist = haversineKm(lat, lng, place.lat, place.lng);
+      if (dist != null && dist < best) { best = dist; nearest = place; }
     }
+    if (nearest && best <= 50) return res.json({ ...nearest, district: nearest.city, fallback: true });
+    res.status(503).json({ error: "Service de localisation temporairement indisponible" });
   }
-  res.json({ city: nearest.city, district: nearest.city });
 });
 
 app.get("/appointments", auth, async (req, res) => {
@@ -402,7 +516,7 @@ app.get("/appointments", auth, async (req, res) => {
   }
 });
 
-app.post("/appointments", auth, async (req, res) => {
+app.post("/appointments", auth, requireRole("client"), async (req, res) => {
   try {
     const { technicianId, date, time, service, faultType, estimatedPrice, address } = req.body;
     const result = await pool.query(
@@ -424,11 +538,22 @@ app.post("/appointments", auth, async (req, res) => {
 
 app.patch("/appointments/:id", auth, async (req, res) => {
   try {
+    const isTechnician = req.user.role === "technician";
+    const requestedStatus = req.body?.status;
+    if (requestedStatus && !["pending", "confirmed", "completed", "cancelled"].includes(requestedStatus)) {
+      return res.status(400).json({ error: "Statut invalide" });
+    }
+    if (!isTechnician && requestedStatus && requestedStatus !== "cancelled") {
+      return res.status(403).json({ error: "Seul le technicien peut confirmer ou terminer une intervention" });
+    }
+    if (!isTechnician && (req.body?.actual_price != null || req.body?.case_description != null)) {
+      return res.status(403).json({ error: "Seul le technicien peut renseigner le compte-rendu et le prix réel" });
+    }
     const fields = {
-      status: req.body.status,
-      actual_price: req.body.actual_price,
-      case_description: req.body.case_description,
-      client_confirmed_price: req.body.client_confirmed_price,
+      status: requestedStatus,
+      actual_price: isTechnician ? req.body.actual_price : null,
+      case_description: isTechnician ? req.body.case_description : null,
+      client_confirmed_price: !isTechnician ? req.body.client_confirmed_price : null,
     };
     const result = await pool.query(
       `UPDATE appointments
@@ -447,23 +572,39 @@ app.patch("/appointments/:id", auth, async (req, res) => {
   }
 });
 
-app.post("/appointments/:id/feedback", auth, async (req, res) => {
+app.post("/appointments/:id/feedback", auth, requireRole("client"), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    const rating = Number(req.body?.rating);
+    const feedback = typeof req.body?.feedback === "string" ? req.body.feedback.trim().slice(0, 2000) : "";
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: "La note doit être comprise entre 1 et 5" });
+    await client.query("BEGIN");
+    const result = await client.query(
       `UPDATE appointments
        SET rating = $1, feedback = $2
-       WHERE id = $3 AND client_id = $4
+       WHERE id = $3 AND client_id = $4 AND status = 'completed'
        RETURNING *`,
-      [req.body.rating, req.body.feedback, req.params.id, req.user.id]
+      [rating, feedback, req.params.id, req.user.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: "Appointment not found" });
+    if (result.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "L’évaluation est disponible après une intervention terminée" });
+    }
+    await saveTechnicianRating(client, {
+      clientId: req.user.id,
+      technicianId: result.rows[0].technician_id,
+      rating,
+      comment: feedback,
+    });
+    await client.query("COMMIT");
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
-  }
+  } finally { client.release(); }
 });
 
-app.post("/technicians/:id/ratings", auth, async (req, res) => {
+app.post("/technicians/:id/ratings", auth, requireRole("client"), async (req, res) => {
   const client = await pool.connect();
   try {
     const technicianId = Number(req.params.id);
@@ -473,47 +614,27 @@ app.post("/technicians/:id/ratings", auth, async (req, res) => {
       return res.status(400).json({ error: "Rating must be between 1 and 5" });
     }
 
-    await client.query("BEGIN");
-    const appointment = await client.query(
-      `SELECT id
-       FROM appointments
-       WHERE client_id = $1 AND technician_id = $2
-       ORDER BY date DESC, time DESC
-       LIMIT 1`,
+    const relationship = await client.query(
+      `SELECT
+         EXISTS (SELECT 1 FROM conversations WHERE client_id = $1 AND technician_id = $2)
+         OR EXISTS (SELECT 1 FROM appointments WHERE client_id = $1 AND technician_id = $2) AS allowed`,
       [req.user.id, technicianId]
     );
+    if (!relationship.rows[0]?.allowed) return res.status(403).json({ error: "Contactez d’abord ce technicien avant de l’évaluer" });
 
-    if (appointment.rows.length > 0) {
-      await client.query(
-        `UPDATE appointments
-         SET rating = $1, feedback = $2
-         WHERE id = $3`,
-        [rating, comment, appointment.rows[0].id]
-      );
+    await client.query("BEGIN");
+    const latestAppointment = await client.query(
+      `SELECT id FROM appointments WHERE client_id = $1 AND technician_id = $2
+       ORDER BY date DESC, time DESC LIMIT 1`,
+      [req.user.id, technicianId]
+    );
+    if (latestAppointment.rows.length) {
+      await client.query("UPDATE appointments SET rating = $1, feedback = $2 WHERE id = $3", [rating, comment.slice(0, 2000), latestAppointment.rows[0].id]);
     }
-
-    const stats = await client.query(
-      `SELECT COALESCE(AVG(rating), 0)::float AS avg_rating,
-              COUNT(rating)::int AS reviews_count
-       FROM appointments
-       WHERE technician_id = $1 AND rating IS NOT NULL`,
-      [technicianId]
-    );
-
-    const avgRating = Number(Number(stats.rows[0].avg_rating || rating).toFixed(1));
-    const reviewsCount = Number(stats.rows[0].reviews_count || 1);
-
-    await client.query(
-      `INSERT INTO technician_profiles (user_id, rating, reviews_count)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id) DO UPDATE SET
-         rating = EXCLUDED.rating,
-         reviews_count = EXCLUDED.reviews_count`,
-      [technicianId, avgRating, reviewsCount]
-    );
+    const stats = await saveTechnicianRating(client, { clientId: req.user.id, technicianId, rating, comment: comment.slice(0, 2000) });
 
     await client.query("COMMIT");
-    res.json({ rating: avgRating, reviews_count: reviewsCount });
+    res.json(stats);
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
@@ -522,7 +643,7 @@ app.post("/technicians/:id/ratings", auth, async (req, res) => {
   }
 });
 
-app.get("/blocked-slots", auth, async (req, res) => {
+app.get("/blocked-slots", auth, requireRole("technician"), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM blocked_slots WHERE technician_id = $1 ORDER BY id DESC`,
@@ -534,7 +655,7 @@ app.get("/blocked-slots", auth, async (req, res) => {
   }
 });
 
-app.post("/blocked-slots", auth, async (req, res) => {
+app.post("/blocked-slots", auth, requireRole("technician"), async (req, res) => {
   try {
     const { type, date, weekDays, startTime, endTime, label } = req.body;
     const result = await pool.query(
@@ -549,7 +670,7 @@ app.post("/blocked-slots", auth, async (req, res) => {
   }
 });
 
-app.delete("/blocked-slots/:id", auth, async (req, res) => {
+app.delete("/blocked-slots/:id", auth, requireRole("technician"), async (req, res) => {
   try {
     await pool.query(`DELETE FROM blocked_slots WHERE id = $1 AND technician_id = $2`, [req.params.id, req.user.id]);
     res.json({ ok: true });
@@ -558,7 +679,7 @@ app.delete("/blocked-slots/:id", auth, async (req, res) => {
   }
 });
 
-app.get("/tarifs", auth, async (req, res) => {
+app.get("/tarifs", auth, requireRole("technician"), async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM price_items WHERE technician_id = $1 ORDER BY category, id`, [req.user.id]);
     res.json(result.rows);
@@ -567,7 +688,7 @@ app.get("/tarifs", auth, async (req, res) => {
   }
 });
 
-app.post("/tarifs", auth, async (req, res) => {
+app.post("/tarifs", auth, requireRole("technician"), async (req, res) => {
   try {
     const { service, unit, price, category } = req.body;
     const result = await pool.query(
@@ -582,7 +703,7 @@ app.post("/tarifs", auth, async (req, res) => {
   }
 });
 
-app.patch("/tarifs/:id", auth, async (req, res) => {
+app.patch("/tarifs/:id", auth, requireRole("technician"), async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE price_items
@@ -601,12 +722,17 @@ app.patch("/tarifs/:id", auth, async (req, res) => {
   }
 });
 
-app.post("/tarifs/import", auth, async (req, res) => {
+app.post("/tarifs/import", auth, requireRole("technician"), async (req, res) => {
   const client = await pool.connect();
   try {
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0 || items.length > 1000
+        || items.some((item) => typeof item.service !== "string" || item.service.length > 200 || !Number.isFinite(Number(item.price)) || Number(item.price) < 0)) {
+      return res.status(400).json({ error: "Grille tarifaire invalide" });
+    }
     await client.query("BEGIN");
     await client.query(`DELETE FROM price_items WHERE technician_id = $1`, [req.user.id]);
-    for (const item of req.body.items || []) {
+    for (const item of items) {
       await client.query(
         `INSERT INTO price_items (technician_id, service, unit, price, category)
          VALUES ($1, $2, $3, $4, $5)`,
@@ -674,7 +800,7 @@ app.patch("/notifications/read-all", auth, async (req, res) => {
   }
 });
 
-app.get("/leads", auth, async (req, res) => {
+app.get("/leads", auth, requireRole("technician"), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT l.*, cu.name AS client_name
@@ -690,7 +816,7 @@ app.get("/leads", auth, async (req, res) => {
   }
 });
 
-app.patch("/leads/:id", auth, async (req, res) => {
+app.patch("/leads/:id", auth, requireRole("technician"), async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE leads SET status = COALESCE($1, status)
@@ -705,7 +831,7 @@ app.patch("/leads/:id", auth, async (req, res) => {
   }
 });
 
-app.post("/leads/:id/decline", auth, async (req, res) => {
+app.post("/leads/:id/decline", auth, requireRole("technician"), async (req, res) => {
   try {
     const current = await pool.query(`SELECT * FROM leads WHERE id = $1 AND technician_id = $2`, [req.params.id, req.user.id]);
     if (current.rows.length === 0) return res.status(404).json({ error: "Lead not found" });
@@ -738,18 +864,16 @@ app.post("/leads/:id/decline", auth, async (req, res) => {
   }
 });
 
-app.post("/chat/quote", auth, async (req, res) => {
-  const text = JSON.stringify(req.body.messages || "").toLowerCase();
-  const base = text.includes("install") ? 520 : text.includes("chaudi") || text.includes("chauff") ? 210 : 185;
-  res.json({ price: base, low: Math.round(base * 0.85), high: Math.round(base * 1.2), confidence: 78 });
-});
+app.post("/chat/quote", auth, (req, res) => res.status(410).json({
+  error: "Endpoint remplacé par POST /api/pricing/quote",
+}));
 
-app.post("/chat/counter-offer", auth, async (req, res) => {
+app.post("/chat/counter-offer", auth, requireRole("client"), async (req, res) => {
   res.json({ ok: true, amount: req.body.amount });
 });
 
 /* ===================== CONTACT TECHNICIAN ===================== */
-app.post("/leads/contact", auth, async (req, res) => {
+app.post("/leads/contact", auth, requireRole("client"), async (req, res) => {
   try {
     const { technicianId, problem, faultType, price, confidence, city } = req.body;
     const clientId = req.user.id;
@@ -793,13 +917,32 @@ app.post("/leads/contact", auth, async (req, res) => {
 });
 
 
-// START SERVER
-const PORT = 5000;
+app.use((error, req, res, next) => {
+  console.error(error);
+  const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+  res.status(status).json({ error: status === 500 ? "Erreur interne" : error.message });
+});
 
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: corsOrigins, credentials: true } });
+io.use((socket, next) => {
+  try {
+    socket.user = verifyToken(socket.handshake.auth?.token);
+    next();
+  } catch {
+    next(new Error("unauthorized"));
+  }
+});
+io.on("connection", (socket) => {
+  socket.join(`user:${socket.user.id}`);
+});
+setRealtimeServer(io);
+
+// START SERVER
 ensureSchedulingColumns()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Serveur lancé sur http://localhost:${PORT}`);
+    server.listen(port, () => {
+      console.log(`Serveur lancé sur http://localhost:${port}`);
     });
   })
   .catch((err) => {

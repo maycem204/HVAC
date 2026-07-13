@@ -61,8 +61,8 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Price rules table
-CREATE TABLE IF NOT EXISTS price_rules (
+-- Technician price items table
+CREATE TABLE IF NOT EXISTS price_items (
   id SERIAL PRIMARY KEY,
   technician_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
   service VARCHAR(255) NOT NULL,
@@ -93,5 +93,5 @@ CREATE INDEX IF NOT EXISTS idx_appointments_technician ON appointments(technicia
 CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status);
 CREATE INDEX IF NOT EXISTS idx_leads_technician ON leads(technician_id);
 CREATE INDEX IF NOT EXISTS idx_leads_client ON leads(client_id);
-CREATE INDEX IF NOT EXISTS idx_price_rules_technician ON price_rules(technician_id);
+CREATE INDEX IF NOT EXISTS idx_price_items_technician ON price_items(technician_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);

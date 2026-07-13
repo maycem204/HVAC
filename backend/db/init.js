@@ -1,7 +1,9 @@
 const fs = require("fs");
 const pool = require("../db");
 
-const sql = fs.readFileSync("./db/init.sql", "utf8");
+const sql = ["./db/init.sql", "./db/pricing.sql"]
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .join("\n");
 
 pool.query(sql)
   .then(() => {

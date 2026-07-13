@@ -1,34 +1,78 @@
-# HVAC Quote Chatbot
+# HVAC Quote Platform
 
-Application FastAPI qui combine:
-- un chatbot de devis HVAC,
-- une extraction LLM/heuristique,
-- deux interfaces de connexion (client et technicien),
-- upload PDF des tarifs technicien,
-- scraping des prix web par région pour comparer client/technicien.
+Plateforme de devis et de mise en relation HVAC.
 
-## Lancer le projet
+## Architecture
 
-1. (Optionnel) Renseigner `ANTHROPIC_API_KEY` dans `.env`.
-2. Installer les dépendances avec `pip install -r requirements.txt`.
-3. Démarrer l'application avec `uvicorn main:app --reload`.
-4. Ouvrir `http://localhost:8000`.
+- Backend unique Node.js/Express.
+- PostgreSQL avec pgvector comme source de vérité tarifaire.
+- DeepSeek extrait les paramètres, rédige le devis et contrôle sa fidélité. Il ne calcule jamais un prix.
+- Qwen3-Embedding-8B génère localement les embeddings multilingues via un serveur compatible OpenAI.
+- Le moteur JavaScript applique une formule déterministe et auditée.
 
-Si la clé Anthropic est absente ou invalide, l'application passe en extraction de secours et l'interface l'indique explicitement.
+Le flux est exposé par `POST /api/pricing/quote`. Les scores inférieurs à 0,50 et les devis rejetés trois fois par le juge sont transférés à un technicien.
 
-## Routes utiles
+## Installation du pricing
 
-- `GET /` page du chatbot
-- `POST /chat` réponse conversationnelle
-- `POST /quote` estimation structurée
-- `GET /health` vérification rapide
-- `POST /auth/register` création compte client/technicien
-- `POST /auth/login` connexion client/technicien
-- `GET /me` profil courant (Bearer token)
-- `POST /technician/upload-price-pdf` upload PDF technicien
-- `GET /technician/pdfs` liste des PDF d'un technicien
-- `GET /technician/price-rules` lire les règles de prix extraites
-- `POST /technician/price-rules` modifier manuellement les règles de prix
-- `GET /market/prices` scraping prix par région du profil connecté (+ région tierce optionnelle)
-- `POST /outcomes/record` enregistrement d'un devis conclu
-- `GET /outcomes?type_panne=...&region=...` lecture des historiques
+1. Copier `.env.example` vers `.env` à la racine.
+2. Ajouter `DEEPSEEK_API_KEY` dans `.env`. Les embeddings locaux ne nécessitent pas de clé API.
+3. Lancer PostgreSQL avec pgvector sur le port 5433, puis exécuter `npm run backend:db:init`.
+4. Importer une seule fois le classeur avec `node backend/scripts/import-pricing-xlsx.js "HVAC_Pricing_Base_MENA (1).xlsx"`.
+5. Générer les embeddings avec `npm --prefix backend run pricing:embed`.
+6. Démarrer avec `npm run backend` et `npm run frontend`.
+
+### Serveur d'embeddings local
+
+Le backend attend l'API OpenAI `POST /v1/embeddings` sur le port 8081 (le port 8080 est utilisé par EnterpriseDB). Avec un GPU NVIDIA, lancer Qwen3 via Hugging Face Text Embeddings Inference :
+
+```bash
+docker run --gpus all -p 8081:80 -v hf_cache:/data ghcr.io/huggingface/text-embeddings-inference:1.9 --model-id Qwen/Qwen3-Embedding-8B --dtype float16
+```
+
+Sans GPU, utiliser l'image CPU et BGE-M3, puis remplacer `EMBEDDING_MODEL` dans `.env` :
+
+```bash
+docker run --name quoteai_embeddings_bge_lean --restart unless-stopped -p 8081:80 -v hf_cache:/data ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id BAAI/bge-m3 --tokenization-workers 2 --max-concurrent-requests 16 --max-batch-tokens 2048 --max-client-batch-size 16
+```
+
+```dotenv
+EMBEDDING_MODEL=BAAI/bge-m3
+EMBEDDING_QUERY_INSTRUCTION=
+```
+
+Si Docker dispose de moins de 12 Go de mémoire, utiliser `multilingual-e5-large-instruct`, officiellement pris en charge par TEI CPU et dont la dimension native est déjà 1024 :
+
+```bash
+docker run -p 8081:80 -v hf_cache:/data ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id intfloat/multilingual-e5-large-instruct --tokenization-workers 2 --max-batch-tokens 4096
+```
+
+```dotenv
+EMBEDDING_MODEL=intfloat/multilingual-e5-large-instruct
+EMBEDDING_QUERY_INSTRUCTION=Retrieve the HVAC fault catalog entry that best matches the user request
+```
+
+Après chaque changement de modèle ou de dimension, relancer `npm --prefix backend run pricing:embed`. Les vecteurs sont ramenés à 1024 dimensions et normalisés côté backend pour rester compatibles avec le schéma pgvector.
+
+Sur CPU, les embeddings utilisent des lots de 8 documents et un délai maximal de 180 secondes, configurables avec `EMBEDDING_BATCH_SIZE` et `EMBEDDING_TIMEOUT_MS`.
+
+Après l'import, PostgreSQL est la source de vérité. Le classeur Excel n'est jamais lu pendant une requête client.
+
+### Cohérence conversationnelle et prix minimums
+
+Le chat transmet les dix derniers messages au moteur afin de résoudre les réponses courtes dans leur contexte. Une demande d'aide simple, par exemple l'accès à un filtre sale, reçoit des consignes d'entretien avant toute proposition commerciale. Un devis n'est calculé que lorsque le client demande réellement une intervention.
+
+Les petites interventions utilisent un plancher local de déplacement afin d'éviter les montants artificiellement bas. Les calibrations initiales sont de 2 500 DZD en Algérie (tarif public de nettoyage à Alger, 2026) et 45 TND en Tunisie (fourchette publique de 40 à 65 TND, 2025-2026). Elles sont stockées dans `pricing_service_minimums` et restent modifiables sans toucher au moteur de calcul.
+
+Si la rédaction produite par le LLM échoue trois fois au contrôle de fidélité, le backend génère un texte déterministe à partir du calcul validé. Le client conserve ainsi une estimation cohérente au lieu de recevoir un faux échec technique.
+## Fournisseur LLM interchangeable
+
+Le moteur de tarification dépend uniquement de l'interface `extract()`, `redact()` et `judge()`. Les adaptateurs DeepSeek, OpenAI et Anthropic se sélectionnent sans modifier l'orchestrateur :
+
+```env
+LLM_PROVIDER=deepseek # deepseek | openai | anthropic
+LLM_API_KEY=...
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+```
+
+Pour OpenAI, utilisez une base terminant par `/v1`; pour Anthropic, `https://api.anthropic.com/v1`. Les anciennes variables `DEEPSEEK_*`, ainsi que les variables `OPENAI_*` et `ANTHROPIC_*`, restent disponibles comme valeurs de repli spécifiques au fournisseur.

@@ -1,6 +1,0 @@
-{
-  "recharge_fluide": {"base": 220, "heures": 1.5},
-  "fuite_detectee": {"base": 150, "heures": 1.0},
-  "panne_compresseur": {"base": 580, "heures": 3.0},
-  "entretien_annuel": {"base": 180, "heures": 1.0}
-}

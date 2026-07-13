@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { User, Wrench, MapPin, Zap, ChevronRight, ArrowRight } from 'lucide-react'
+import api from '../lib/api'
 
 export default function HomePage({ setUser, setUserRole }) {
   const navigate = useNavigate()
@@ -63,7 +64,7 @@ export default function HomePage({ setUser, setUserRole }) {
     setLoading(true)
 
     try {
-      const endpoint = isLogin ? '/auth/login' : '/auth/register'
+      const endpoint = isLogin ? '/login' : '/register'
       const payload = {
         email: formData.email.trim(),
         password: formData.password,
@@ -71,33 +72,25 @@ export default function HomePage({ setUser, setUserRole }) {
         ...(isLogin
           ? {}
           : {
-              full_name: formData.fullName.trim(),
-              region: formData.region.trim(),
+              name: formData.fullName.trim(),
+              city: formData.region.trim(),
             }),
       }
 
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-
-      const data = await response.json()
+      const { data } = await api.post(endpoint, payload)
       console.log('Response data:', data)
-      
-      if (!response.ok) {
-        throw new Error(getErrorMessage(data.detail ?? data))
-      }
 
       localStorage.setItem('token', data.token)
       
       // Extract user data from response
       const userData = data.user || {
         id: data.id,
-        full_name: data.full_name || formData.fullName,
+        full_name: data.full_name || data.name || formData.fullName,
+        name: data.name || data.full_name || formData.fullName,
         email: data.email || formData.email,
         role: data.role || selectedRole,
-        region: data.region || formData.region
+        region: data.region || data.city || formData.region,
+        city: data.city || data.region || formData.region
       }
       
       setUser(userData)
@@ -110,7 +103,7 @@ export default function HomePage({ setUser, setUserRole }) {
       }
     } catch (err) {
       console.error('Error:', err)
-      setError(err instanceof Error ? err.message : 'Erreur lors de la connexion')
+      setError(getErrorMessage(err.response?.data ?? err.message ?? err))
     } finally {
       setLoading(false)
     }
