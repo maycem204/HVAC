@@ -5,15 +5,17 @@ const { Server } = require("socket.io");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const multer = require("multer");
 const { rateLimit } = require("express-rate-limit");
 const { port, corsOrigins, geocodingBaseUrl, geocodingUserAgent } = require("./env");
 const { hashPassword, verifyPassword } = require("./utils/password");
 const { forwardGeocode, reverseGeocode } = require("./services/geocoding");
+const { parseTariffFile } = require("./services/tariff-file-parser");
 
 const pool = require("./db");
 const pricingRouter = require("./routes/pricing");
 const conversationsRouter = require("./routes/conversations");
-const { setRealtimeServer } = require("./realtime");
+const { setRealtimeServer, emitToUser } = require("./realtime");
 
 const app = express();
 
@@ -27,6 +29,10 @@ app.use(express.json({ limit: "100kb" }));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
 const publicLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false });
 const geocodeLimiter = rateLimit({ windowMs: 1000, limit: 1, standardHeaders: "draft-8", legacyHeaders: false });
+const tariffUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
 app.use(publicLimiter);
 app.use("/api/pricing", pricingRouter);
 app.use("/conversations", conversationsRouter);
@@ -81,6 +87,19 @@ async function ensureSchedulingColumns() {
     );
     CREATE INDEX IF NOT EXISTS idx_pricing_fallback_pending
       ON pricing_fallback_requests(status, created_at) WHERE status = 'pending';
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_appointment_unique
+      ON leads(appointment_id) WHERE appointment_id IS NOT NULL;
+    INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city, requested_date, requested_time, address, appointment_id)
+    SELECT a.client_id, a.technician_id, COALESCE(a.service, 'Demande de rendez-vous'), a.fault_type,
+           COALESCE(a.estimated_price, 0), 100,
+           CASE WHEN a.status = 'completed' THEN 'done' WHEN a.status = 'cancelled' THEN 'done' ELSE 'accepted' END,
+           u.city, a.date, a.time, a.address, a.id
+    FROM appointments a
+    LEFT JOIN users u ON u.id = a.client_id
+    WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.appointment_id = a.id)
+    ON CONFLICT DO NOTHING;
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -528,23 +547,53 @@ app.get("/appointments", auth, async (req, res) => {
 });
 
 app.post("/appointments", auth, requireRole("client"), async (req, res) => {
+  const client = await pool.connect();
   try {
     const { technicianId, date, time, service, faultType, estimatedPrice, address } = req.body;
-    const result = await pool.query(
-      `INSERT INTO appointments (client_id, technician_id, date, time, service, fault_type, estimated_price, status, address, duration)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'confirmed', $8, '2h')
-       RETURNING *`,
-      [req.user.id, technicianId, date, time, service, faultType, estimatedPrice || 0, address || null]
+    if (!Number.isInteger(Number(technicianId)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) || !/^\d{2}:\d{2}/.test(String(time || ""))) {
+      return res.status(400).json({ error: "Technicien, date ou heure invalide" });
+    }
+    const technician = await client.query(
+      "SELECT u.id, u.name FROM users u JOIN technician_profiles t ON t.user_id=u.id WHERE u.id=$1 AND u.role='technician' AND t.available=true",
+      [technicianId]
     );
-    await pool.query(
+    if (!technician.rows.length) return res.status(404).json({ error: "Technicien indisponible ou introuvable" });
+    const availability = await isTechnicianAvailable(Number(technicianId), date, time);
+    if (!availability.available) return res.status(409).json({ error: availability.reason });
+    const clientProfile = await client.query("SELECT name, city, address FROM users WHERE id = $1", [req.user.id]);
+    const bookingAddress = address || clientProfile.rows[0]?.address || null;
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO appointments (client_id, technician_id, date, time, service, fault_type, estimated_price, status, address, duration)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, '2h')
+       RETURNING *`,
+      [req.user.id, technicianId, date, time, service, faultType, estimatedPrice || 0, bookingAddress]
+    );
+    const lead = await client.query(
+      `INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city, requested_date, requested_time, address, appointment_id)
+       VALUES ($1,$2,$3,$4,$5,100,'new',$6,$7,$8,$9,$10)
+       ON CONFLICT (appointment_id) WHERE appointment_id IS NOT NULL
+       DO UPDATE SET status='new', requested_date=EXCLUDED.requested_date, requested_time=EXCLUDED.requested_time
+       RETURNING *`,
+      [req.user.id, technicianId, service || `Rendez-vous ${faultType || "HVAC"}`, faultType || "Climatisation", estimatedPrice || 0,
+        clientProfile.rows[0]?.city || null, date, time, bookingAddress, result.rows[0].id]
+    );
+    const notification = await client.query(
       `INSERT INTO notifications (user_id, type, title, message)
-       VALUES ($1, 'rdv', 'Nouveau rendez-vous', $2)`,
+       VALUES ($1, 'rdv', 'Nouvelle demande de rendez-vous', $2)
+       RETURNING *`,
       [technicianId, `Rendez-vous ${service || ""} le ${date} à ${time}`]
     );
-    res.json(result.rows[0]);
+    await client.query("COMMIT");
+    const payload = { ...result.rows[0], client_name: clientProfile.rows[0]?.name, client_city: clientProfile.rows[0]?.city, technician_name: technician.rows[0].name };
+    emitToUser(technicianId, "appointment:new", payload);
+    emitToUser(technicianId, "lead:new", { ...lead.rows[0], client_name: clientProfile.rows[0]?.name });
+    emitToUser(technicianId, "notification:new", notification.rows[0]);
+    res.status(201).json(payload);
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     res.status(500).json({ error: err.message });
-  }
+  } finally { client.release(); }
 });
 
 app.patch("/appointments/:id", auth, async (req, res) => {
@@ -733,32 +782,44 @@ app.patch("/tarifs/:id", auth, requireRole("technician"), async (req, res) => {
   }
 });
 
-app.post("/tarifs/import", auth, requireRole("technician"), async (req, res) => {
+async function replaceTariffs(technicianId, items) {
   const client = await pool.connect();
   try {
-    const items = req.body?.items;
     if (!Array.isArray(items) || items.length === 0 || items.length > 1000
         || items.some((item) => typeof item.service !== "string" || item.service.length > 200 || !Number.isFinite(Number(item.price)) || Number(item.price) < 0)) {
-      return res.status(400).json({ error: "Grille tarifaire invalide" });
+      throw Object.assign(new Error("Grille tarifaire invalide"), { status: 400 });
     }
     await client.query("BEGIN");
-    await client.query(`DELETE FROM price_items WHERE technician_id = $1`, [req.user.id]);
+    await client.query(`DELETE FROM price_items WHERE technician_id = $1`, [technicianId]);
     for (const item of items) {
       await client.query(
         `INSERT INTO price_items (technician_id, service, unit, price, category)
          VALUES ($1, $2, $3, $4, $5)`,
-        [req.user.id, item.service, item.unit || "", item.price || 0, item.category || "Base"]
+        [technicianId, item.service, item.unit || "", item.price || 0, item.category || "Base"]
       );
     }
-    const result = await client.query(`SELECT * FROM price_items WHERE technician_id = $1 ORDER BY category, id`, [req.user.id]);
+    const result = await client.query(`SELECT * FROM price_items WHERE technician_id = $1 ORDER BY category, id`, [technicianId]);
     await client.query("COMMIT");
-    res.json(result.rows);
+    return result.rows;
   } catch (err) {
     await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
+    throw err;
   } finally {
     client.release();
   }
+}
+
+app.post("/tarifs/import", auth, requireRole("technician"), async (req, res, next) => {
+  try { res.json(await replaceTariffs(req.user.id, req.body?.items)); } catch (error) { next(error); }
+});
+
+app.post("/tarifs/import-file", auth, requireRole("technician"), tariffUpload.single("file"), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "Fichier manquant" });
+    const items = await parseTariffFile(req.file);
+    const saved = await replaceTariffs(req.user.id, items);
+    res.json({ items: saved, imported_count: saved.length, filename: req.file.originalname });
+  } catch (error) { next(error); }
 });
 
 /* ===================== NOTIFICATIONS ===================== */
@@ -828,18 +889,32 @@ app.get("/leads", auth, requireRole("technician"), async (req, res) => {
 });
 
 app.patch("/leads/:id", auth, requireRole("technician"), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      `UPDATE leads SET status = COALESCE($1, status)
-       WHERE id = $2 AND technician_id = $3
-       RETURNING *`,
+    await client.query("BEGIN");
+    const result = await client.query(
+      `WITH updated AS (
+         UPDATE leads SET status = COALESCE($1, status)
+         WHERE id = $2 AND technician_id = $3
+         RETURNING *
+       )
+       SELECT updated.*, cu.name AS client_name FROM updated LEFT JOIN users cu ON cu.id=updated.client_id`,
       [req.body.status, req.params.id, req.user.id]
     );
-    if (result.rows.length === 0) return res.status(404).json({ error: "Lead not found" });
+    if (result.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Lead not found" });
+    }
+    if (req.body.status === "accepted" && result.rows[0].appointment_id) {
+      await client.query("UPDATE appointments SET status='confirmed' WHERE id=$1 AND technician_id=$2", [result.rows[0].appointment_id, req.user.id]);
+    }
+    await client.query("COMMIT");
+    if (result.rows[0].appointment_id) emitToUser(result.rows[0].client_id, "appointment:updated", { id: result.rows[0].appointment_id, status: "confirmed" });
     res.json(result.rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     res.status(500).json({ error: err.message });
-  }
+  } finally { client.release(); }
 });
 
 app.post("/leads/:id/decline", auth, requireRole("technician"), async (req, res) => {
@@ -930,7 +1005,8 @@ app.post("/leads/contact", auth, requireRole("client"), async (req, res) => {
 
 app.use((error, req, res, next) => {
   console.error(error);
-  const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+  const status = error instanceof multer.MulterError ? 400
+    : Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
   res.status(status).json({ error: status === 500 ? "Erreur interne" : error.message });
 });
 

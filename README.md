@@ -64,6 +64,10 @@ Le chat transmet les dix derniers messages au moteur afin de résoudre les répo
 Les petites interventions utilisent un plancher local de déplacement afin d'éviter les montants artificiellement bas. Les calibrations initiales sont de 2 500 DZD en Algérie (tarif public de nettoyage à Alger, 2026) et 45 TND en Tunisie (fourchette publique de 40 à 65 TND, 2025-2026). Elles sont stockées dans `pricing_service_minimums` et restent modifiables sans toucher au moteur de calcul.
 
 Si la rédaction produite par le LLM échoue trois fois au contrôle de fidélité, le backend génère un texte déterministe à partir du calcul validé. Le client conserve ainsi une estimation cohérente au lieu de recevoir un faux échec technique.
+
+### Import de la grille d'un technicien
+
+L'espace technicien accepte les fichiers CSV, Excel `.xlsx`/`.xlsm` et les PDF contenant du texte sélectionnable, jusqu'à 5 Mo. L'extraction recherche automatiquement les variantes françaises et anglaises des colonnes `Service`/`Prestation`, `Prix`/`Tarif`, `Unité` et `Catégorie`, même lorsque l'en-tête n'est pas sur la première ligne. Les PDF constitués uniquement d'images nécessitent d'abord une reconnaissance OCR.
 ## Fournisseur LLM interchangeable
 
 Le moteur de tarification dépend uniquement de l'interface `extract()`, `redact()` et `judge()`. Les adaptateurs DeepSeek, OpenAI et Anthropic se sélectionnent sans modifier l'orchestrateur :

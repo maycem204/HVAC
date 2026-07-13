@@ -60,6 +60,7 @@ interface BlockedSlot {
 interface Lead {
   id: number; client: string; problem: string; price: number; confidence: number;
   time: string; status: "new" | "accepted" | "done"; city: string; faultType: string;
+  appointmentId?: number; requestedDate?: string; requestedTime?: string; address?: string;
 }
 
 // ─── Config statique (pas des données métier — restent en dur) ───────────────
@@ -211,6 +212,10 @@ function mapLead(row: any): Lead {
     status: row.status,
     city: row.city,
     faultType: row.fault_type,
+    appointmentId: row.appointment_id == null ? undefined : Number(row.appointment_id),
+    requestedDate: row.requested_date,
+    requestedTime: row.requested_time,
+    address: row.address,
   };
 }
 
@@ -560,9 +565,16 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
   useEffect(() => {
     const socket = realtimeSocket();
     if (!socket) return;
-    const refresh = () => api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
-    socket.on("message:new", refresh);
-    return () => { socket.off("message:new", refresh); };
+    const refreshNotifications = () => api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
+    const refreshAppointments = () => api.get("/appointments").then((res) => setAppointments(res.data.map(mapAppointment))).catch(console.error);
+    socket.on("message:new", refreshNotifications);
+    socket.on("notification:new", refreshNotifications);
+    socket.on("appointment:updated", refreshAppointments);
+    return () => {
+      socket.off("message:new", refreshNotifications);
+      socket.off("notification:new", refreshNotifications);
+      socket.off("appointment:updated", refreshAppointments);
+    };
   }, []);
 
   function markRead(id: number) {
@@ -591,7 +603,7 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
         <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-primary text-primary":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab==="chat"&&<ClientChat technicians={technicians} location={location} onContact={contactTechnician}/>}
+        {tab==="chat"&&<ClientChat technicians={technicians} location={location} onContact={contactTechnician} onAppointmentCreated={(appointment)=>setAppointments((items)=>items.some((item)=>item.id===appointment.id)?items:[...items,appointment])}/>}
         {tab==="rdv"&&(
           <ClientRdv technicians={technicians} appointments={appointments} setAppointments={setAppointments}/>
         )}
@@ -613,7 +625,7 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
 // Chaque message part au backend. Le fournisseur LLM actif mène la clarification et le moteur
 // déterministe produit le devis dès que les informations sont suffisantes.
 
-function ClientChat({ technicians, location, onContact }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void }) {
+function ClientChat({ technicians, location, onContact, onAppointmentCreated }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void; onAppointmentCreated: (appointment: Appointment) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro." }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -689,7 +701,7 @@ function ClientChat({ technicians, location, onContact }: { technicians: Technic
     if (!selectedSlot) return;
     const tech = technicians.find((t)=>t.id===selectedSlot.techId); if(!tech) return;
     try {
-      await api.post("/appointments", {
+      const { data } = await api.post("/appointments", {
         technicianId: tech.id,
         date: selectedSlot.date,
         time: selectedSlot.time,
@@ -697,8 +709,9 @@ function ClientChat({ technicians, location, onContact }: { technicians: Technic
         faultType,
         estimatedPrice: quote?.price ?? 0,
       });
+      onAppointmentCreated(mapAppointment(data));
       onContact(tech.id); setBooked(true); setShowSlots(false);
-      setMessages((m)=>[...m,{role:"bot",text:`Rendez-vous confirmé ! ${selectedSlot.label} à ${selectedSlot.time} avec ${tech.name} (spécialiste ${faultType}). Confirmation SMS envoyée.`}]);
+      setMessages((m)=>[...m,{role:"bot",text:`Demande envoyée ! ${selectedSlot.label} à ${selectedSlot.time} avec ${tech.name} (spécialiste ${faultType}). Le rendez-vous apparaîtra comme confirmé dès que le technicien l’acceptera.`}]);
     } catch (err) {
       console.error(err);
       setMessages((m)=>[...m,{role:"bot",text:"Impossible de confirmer le rendez-vous, réessayez."}]);
@@ -1011,7 +1024,10 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
     if (!socket) return;
     const refresh = () => api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
     socket.on("message:new", refresh);
-    return () => { socket.off("message:new", refresh); };
+    socket.on("notification:new", refresh);
+    socket.on("appointment:new", refresh);
+    socket.on("lead:new", refresh);
+    return () => { socket.off("message:new", refresh); socket.off("notification:new", refresh); socket.off("appointment:new", refresh); socket.off("lead:new", refresh); };
   }, []);
 
   function markRead(id: number) {
@@ -1059,9 +1075,18 @@ function TechLeads() {
   const [reassigned, setReassigned] = useState<Record<number,string>>({});
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const refreshLeads = useCallback(() => {
     api.get("/leads").then((res) => setLeads(res.data.map(mapLead))).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    refreshLeads();
+    const socket = realtimeSocket();
+    if (!socket) return;
+    socket.on("lead:new", refreshLeads);
+    socket.on("appointment:new", refreshLeads);
+    return () => { socket.off("lead:new", refreshLeads); socket.off("appointment:new", refreshLeads); };
+  }, [refreshLeads]);
 
   const filtered = filter==="all"?leads:leads.filter((l)=>l.status===filter);
 
@@ -1099,6 +1124,7 @@ function TechLeads() {
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price} €</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
               <div className="mt-2 text-sm">{lead.problem}</div>
+              {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} à {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
               <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">Confiance IA</div><ConfidenceBar value={lead.confidence}/></div>
               {reassigning===lead.id?<div className="mt-3 flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="w-4 h-4 animate-spin"/>Moteur IA recherche un autre technicien…</div>
               :reassigned[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4 shrink-0"/>Lead réassigné à <strong>{reassigned[lead.id]}</strong> — client notifié.</div>
@@ -1127,44 +1153,32 @@ function TechTarifs() {
   const [showAdd, setShowAdd] = useState(false);
   const [newTarif, setNewTarif] = useState({service:"",unit:"",price:"",category:"Base"});
   const [uploadStatus, setUploadStatus] = useState<"idle"|"processing"|"success"|"error">("idle");
-  const categories = ["Base","Réparation","Maintenance","Installation","Urgence"];
+  const [uploadError, setUploadError] = useState("");
+  const categories = Array.from(new Set(["Base","Réparation","Maintenance","Installation","Urgence",...tarifs.map((tarif)=>tarif.category).filter(Boolean)]));
 
   useEffect(() => {
     api.get("/tarifs").then((res) => setTarifs(res.data)).catch(console.error);
   }, []);
 
-  const onDrop = useCallback((accepted: File[])=>{
+  const onDrop = useCallback(async (accepted: File[])=>{
     const file = accepted[0]; if(!file) return;
-    setUploadStatus("processing");
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    if (ext==="csv" && file.size <= 1024 * 1024) {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const lines = String(e.target?.result || "").replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean).slice(0, 1001);
-          const delimiter = (lines[0]?.match(/;/g)?.length || 0) > (lines[0]?.match(/,/g)?.length || 0) ? ";" : ",";
-          const parseLine = (line: string) => line.split(delimiter).map((value) => value.trim().replace(/^"|"$/g, "").replace(/""/g, '"'));
-          const headers = parseLine(lines.shift() || "").map((header) => header.toLocaleLowerCase("fr"));
-          const rows = lines.map((line) => Object.fromEntries(parseLine(line).map((value, index) => [headers[index], value])));
-          const extracted: PriceItem[] = rows
-            .map((r) => ({ service: r.service||"", unit: r.unit||r["unité"]||"", price: parseFloat(r.price||r.prix||"0"), category: r.category||r["catégorie"]||"Base" }))
-            .filter((i) => i.service && i.price);
-          if (extracted.length === 0) { setUploadStatus("error"); return; }
-          // Import en bulk côté backend, qui remplace/fusionne la grille du technicien
-          const { data: saved } = await api.post("/tarifs/import", { items: extracted });
-          setTarifs(saved);
-          setUploadStatus("success");
-        } catch {
-          setUploadStatus("error");
-        }
-      };
-      reader.readAsText(file, "utf-8");
-    } else {
+    setUploadStatus("processing"); setUploadError("");
+    try {
+      const form = new FormData(); form.append("file", file);
+      const { data } = await api.post("/tarifs/import-file", form, { headers:{"Content-Type":"multipart/form-data"} });
+      setTarifs(data.items);
+      setUploadStatus("success");
+    } catch (error: any) {
+      setUploadError(error?.response?.data?.error || "Impossible d’extraire cette grille tarifaire.");
       setUploadStatus("error");
     }
   },[]);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept:{"text/csv":[".csv"]}, multiple:false, maxSize:1024*1024 });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    onDropRejected:(rejections)=>{ setUploadStatus("error"); setUploadError(rejections[0]?.errors[0]?.code==="file-too-large"?"Le fichier dépasse 5 Mo.":"Format accepté : CSV, Excel .xlsx/.xlsm ou PDF texte."); },
+    accept:{"text/csv":[".csv"],"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":[".xlsx",".xlsm"],"application/pdf":[".pdf"]}, multiple:false, maxSize:5*1024*1024
+  });
 
   async function saveEdit(item: PriceItem) {
     const v = parseFloat(editVal);
@@ -1193,10 +1207,10 @@ function TechTarifs() {
       <div className="mb-6">
         <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${isDragActive?"border-emerald-400 bg-emerald-50":uploadStatus==="success"?"border-emerald-300 bg-emerald-50":uploadStatus==="error"?"border-red-300 bg-red-50":"border-gray-200 hover:border-emerald-300 bg-gray-50"}`}>
           <input {...getInputProps()}/>
-          {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?"Déposez ici":"Importez votre grille tarifaire"}</div><div className="text-xs text-muted-foreground">CSV UTF-8, 1 Mo maximum</div></>}
+          {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?"Déposez ici":"Importez votre grille tarifaire"}</div><div className="text-xs text-muted-foreground">CSV, Excel .xlsx/.xlsm ou PDF texte — 5 Mo maximum</div></>}
           {uploadStatus==="processing"&&<div className="flex flex-col items-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">Extraction en cours…</div></div>}
           {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">{tarifs.length} services importés</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">Importer un autre fichier</button></>}
-          {uploadStatus==="error"&&<><AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400"/><div className="text-sm font-medium text-red-600 mb-2">Format non reconnu</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-primary hover:underline">Réessayer</button></>}
+          {uploadStatus==="error"&&<><AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400"/><div className="text-sm font-medium text-red-600 mb-1">Extraction impossible</div><div className="text-xs text-red-500 mb-2">{uploadError}</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");setUploadError("");}} className="text-xs text-primary hover:underline">Réessayer</button></>}
         </div>
       </div>
       {showAdd&&(
@@ -1246,10 +1260,19 @@ function TechAgenda() {
   const [caseDesc, setCaseDesc] = useState("");
   const [priceSaved, setPriceSaved] = useState(false);
 
-  useEffect(() => {
+  const refreshAppointments = useCallback(() => {
     api.get("/appointments").then((res) => setAppointments(res.data.map(mapAppointment))).catch(console.error);
-    api.get("/blocked-slots").then((res) => setBlockedSlots(res.data.map(mapBlockedSlot))).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    refreshAppointments();
+    api.get("/blocked-slots").then((res) => setBlockedSlots(res.data.map(mapBlockedSlot))).catch(console.error);
+    const socket = realtimeSocket();
+    if (!socket) return;
+    socket.on("appointment:new", refreshAppointments);
+    socket.on("appointment:updated", refreshAppointments);
+    return () => { socket.off("appointment:new", refreshAppointments); socket.off("appointment:updated", refreshAppointments); };
+  }, [refreshAppointments]);
 
   const year = currentMonth.getFullYear(); const month = currentMonth.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
