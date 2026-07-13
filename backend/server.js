@@ -120,6 +120,17 @@ async function ensureSchedulingColumns() {
     FROM appointments WHERE rating IS NOT NULL
     ORDER BY client_id, technician_id, date DESC, time DESC
     ON CONFLICT (client_id, technician_id) DO NOTHING;
+    UPDATE technician_profiles t
+    SET rating = COALESCE(stats.avg_rating, 0),
+        reviews_count = COALESCE(stats.reviews_count, 0)
+    FROM (
+      SELECT u.id AS technician_id, AVG(r.rating)::numeric(2,1) AS avg_rating, COUNT(r.id)::int AS reviews_count
+      FROM users u
+      LEFT JOIN technician_ratings r ON r.technician_id = u.id
+      WHERE u.role = 'technician'
+      GROUP BY u.id
+    ) stats
+    WHERE t.user_id = stats.technician_id;
   `);
 }
 
@@ -617,7 +628,7 @@ app.post("/technicians/:id/ratings", auth, requireRole("client"), async (req, re
     const relationship = await client.query(
       `SELECT
          EXISTS (SELECT 1 FROM conversations WHERE client_id = $1 AND technician_id = $2)
-         OR EXISTS (SELECT 1 FROM appointments WHERE client_id = $1 AND technician_id = $2) AS allowed`,
+         OR EXISTS (SELECT 1 FROM appointments WHERE client_id = $1 AND technician_id = $2 AND status = 'completed') AS allowed`,
       [req.user.id, technicianId]
     );
     if (!relationship.rows[0]?.allowed) return res.status(403).json({ error: "Contactez d’abord ce technicien avant de l’évaluer" });

@@ -26,8 +26,8 @@ const users = [
     lng: 3.058,
     specializations: ["Climatisation", "Reparation", "Refrigeration"],
     radius_km: 18,
-    rating: 4.9,
-    reviews_count: 42,
+    rating: 0,
+    reviews_count: 0,
     response_time: "30 min",
   },
   {
@@ -42,8 +42,8 @@ const users = [
     lng: 3.0419,
     specializations: ["Chauffage", "Ventilation", "Installation"],
     radius_km: 22,
-    rating: 4.7,
-    reviews_count: 31,
+    rating: 0,
+    reviews_count: 0,
     response_time: "45 min",
   },
   {
@@ -58,8 +58,8 @@ const users = [
     lng: 3.0833,
     specializations: ["Installation", "Maintenance preventive", "Pompe a chaleur"],
     radius_km: 20,
-    rating: 4.8,
-    reviews_count: 27,
+    rating: 0,
+    reviews_count: 0,
     response_time: "1 h",
   },
 ];
@@ -109,8 +109,6 @@ async function upsertUser(client, user) {
        ON CONFLICT (user_id) DO UPDATE SET
          specializations = EXCLUDED.specializations,
          radius_km = EXCLUDED.radius_km,
-         rating = EXCLUDED.rating,
-         reviews_count = EXCLUDED.reviews_count,
          response_time = EXCLUDED.response_time,
          available = true`,
       [id, user.specializations, user.radius_km, user.rating, user.reviews_count, user.response_time]
