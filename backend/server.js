@@ -24,7 +24,7 @@ const app = express();
 app.disable("x-powered-by");
 app.use(helmet({ referrerPolicy: { policy: "strict-origin-when-cross-origin" } }));
 app.use(cors({
-  origin: corsOrigins,
+  origin: corsOrigins.length ? corsOrigins : false,
   credentials: true
 }));
 app.use(express.json({ limit: "100kb" }));
@@ -1135,7 +1135,7 @@ app.use((error, req, res, next) => {
 });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: corsOrigins, credentials: true } });
+const io = new Server(server, corsOrigins.length ? { cors: { origin: corsOrigins, credentials: true } } : {});
 io.use((socket, next) => {
   try {
     socket.user = verifyToken(socket.handshake.auth?.token);

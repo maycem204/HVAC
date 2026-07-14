@@ -54,7 +54,7 @@ module.exports = {
   jwtIssuer: process.env.JWT_ISSUER || "quoteai-api",
   jwtAudience: process.env.JWT_AUDIENCE || "quoteai-web",
   bcryptRounds: envInt("BCRYPT_ROUNDS", 10),
-  corsOrigins: corsOrigins.length > 0 ? corsOrigins : [
+  corsOrigins: corsOrigins.length > 0 ? corsOrigins : process.env.NODE_ENV === "production" ? [] : [
     "http://localhost:5174",
     "http://localhost:3000",
     "http://127.0.0.1:5174",
