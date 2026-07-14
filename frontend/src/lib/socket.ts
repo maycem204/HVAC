@@ -1,12 +1,21 @@
 import { io, type Socket } from "socket.io-client";
 
 let socket: Socket | null = null;
+let socketToken: string | null = null;
+
+function socketUrl() {
+  const configured = String(import.meta.env.VITE_API_URL || "").trim();
+  if (configured) return configured.replace(/\/$/, "");
+  return import.meta.env.DEV ? "http://127.0.0.1:5000" : window.location.origin;
+}
 
 export function realtimeSocket() {
   const token = localStorage.getItem("token");
   if (!token) return null;
-  if (!socket) {
-    socket = io(import.meta.env.VITE_API_URL || "http://127.0.0.1:5000", {
+  if (!socket || socketToken !== token) {
+    socket?.disconnect();
+    socketToken = token;
+    socket = io(socketUrl(), {
       auth: { token },
       transports: ["websocket", "polling"],
     });
@@ -20,4 +29,5 @@ export function realtimeSocket() {
 export function disconnectRealtime() {
   socket?.disconnect();
   socket = null;
+  socketToken = null;
 }

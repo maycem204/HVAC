@@ -41,7 +41,7 @@ router.post("/quote", auth, quoteLimiter, async (req, res, next) => {
     if (body.location && (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng)) || Math.abs(Number(lat)) > 90 || Math.abs(Number(lng)) > 180)) {
       return res.status(400).json({ error: "Coordonnées invalides." });
     }
-    const user = await pool.query("SELECT city, lat, lng FROM users WHERE id = $1", [req.user.id]);
+    const user = await pool.query("SELECT city, address, country_code, lat, lng FROM users WHERE id = $1", [req.user.id]);
     const clientCountry = resolvePricingCountry({
       text,
       explicitCountry: body.country,

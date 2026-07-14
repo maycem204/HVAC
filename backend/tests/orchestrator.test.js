@@ -34,6 +34,40 @@ test("un message vide est rejeté avant l'appel au LLM", async () => {
   await assert.rejects(() => orchestrator.quote({ text: "   " }), /message is required/i);
 });
 
+test("une panne générique demande le symptôme et ne calcule jamais de prix", async () => {
+  let llmCalled = false;
+  const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: { async extract() { llmCalled = true; } } });
+  const result = await orchestrator.quote({ text: "Climatiseur LG en panne", history: [] });
+  assert.equal(result.status, "clarification");
+  assert.match(result.question, /refroidit|fuit|bruit|code/i);
+  assert.equal(llmCalled, false);
+});
+
+test("un simple manque de froid exige des observations avant tout devis", async () => {
+  let llmCalled=false;
+  const orchestrator=new PricingOrchestrator({repository:{},embeddings:{},llm:{async extract(){llmCalled=true;}}});
+  const result=await orchestrator.quote({text:"Ma clim Daikin split ne refroidit plus",history:[]});
+  assert.equal(result.status,"clarification");
+  assert.match(result.question,/souffle|extérieure|givre/i);
+  assert.equal(llmCalled,false);
+});
+
+test("la réponse air chaud poursuit le diagnostic sans retomber sur la clarification initiale", async () => {
+  let llmCalled = false;
+  const orchestrator = new PricingOrchestrator({
+    repository: {}, embeddings: {},
+    llm: { async extract() { llmCalled = true; throw new Error("test stop"); } },
+  });
+  const history = [
+    { role: "user", text: "Ma clim Daikin split ne refroidit plus" },
+    { role: "bot", text: "L’appareil souffle-t-il de l’air ?" },
+  ];
+  const result = await orchestrator.quote({ text: "air chaud", history });
+  assert.equal(llmCalled, true);
+  assert.equal(result.status, "human_handoff");
+  assert.notEqual(result.failure_code, "pricing_factor_unavailable");
+});
+
 test("une réponse courte sur un filtre sale conserve le contexte et donne une aide sûre", async () => {
   let llmCalled = false;
   const orchestrator = new PricingOrchestrator({
@@ -83,7 +117,7 @@ test("un rejet du rédacteur utilise un devis déterministe au lieu d'un transfe
       async judge() { return { valid: false, reason: "chiffres absents" }; },
     },
   });
-  const result = await orchestrator.quote({ text: "ma clim ne refroidit plus", clientId: 4 });
+  const result = await orchestrator.quote({ text: "ma clim ne refroidit plus mais souffle de l'air chaud", clientId: 4 });
   assert.equal(result.status, "quote");
   assert.equal(result.rendering_fallback, true);
   assert.equal(result.calculation.total, 2500);
@@ -118,7 +152,7 @@ test("une panne LLM est mise en file humaine avec un code explicite", async () =
     embeddings: {},
     llm: { async extract() { throw Object.assign(new Error("down"), { code: "llm_timeout" }); } },
   });
-  const result = await orchestrator.quote({ text: "ma clim est en panne", clientId: 4 });
+  const result = await orchestrator.quote({ text: "ma clim ne refroidit plus et fuit", clientId: 4 });
   assert.equal(result.status, "human_handoff");
   assert.equal(result.failure_code, "llm_unavailable");
   assert.equal(result.retryable, true);
@@ -132,7 +166,7 @@ test("une panne embeddings ne devient pas un faux zéro résultat", async () => 
     embeddings: { storageModel: "BAAI/bge-m3:1024", async embed() { throw new Error("TEI down"); } },
     llm: { async extract() { return validExtraction(); } },
   });
-  const result = await orchestrator.quote({ text: "ma clim est en panne", clientId: 4 });
+  const result = await orchestrator.quote({ text: "ma clim ne refroidit plus et fuit", clientId: 4 });
   assert.equal(result.failure_code, "embedding_unavailable");
   assert.equal(repository.queued[0].failureCode, "embedding_unavailable");
 });

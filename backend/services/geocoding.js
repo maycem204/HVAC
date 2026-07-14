@@ -56,7 +56,7 @@ async function forwardGeocode(query, config) {
   if (!Array.isArray(results) || results.length === 0) return null;
   const first = results[0];
   const city = cityFromAddress(first.address) || first.display_name?.split(",")[0] || place;
-  return save(key, { lat: Number(first.lat), lng: Number(first.lon), city, district: first.address?.suburb || first.address?.city_district || city });
+  return save(key, { lat: Number(first.lat), lng: Number(first.lon), city, district: first.address?.suburb || first.address?.city_district || city, countryCode: String(first.address?.country_code || "").toUpperCase(), country: first.address?.country || "" });
 }
 
 async function reverseGeocode(lat, lng, config) {
@@ -69,7 +69,7 @@ async function reverseGeocode(lat, lng, config) {
   const result = await nominatim(`/reverse?format=jsonv2&addressdetails=1&zoom=14&lat=${latitude}&lon=${longitude}`, config);
   const city = cityFromAddress(result.address);
   if (!city) return null;
-  return save(key, { lat: latitude, lng: longitude, city, district: result.address?.suburb || result.address?.city_district || city });
+  return save(key, { lat: latitude, lng: longitude, city, district: result.address?.suburb || result.address?.city_district || city, countryCode: String(result.address?.country_code || "").toUpperCase(), country: result.address?.country || "" });
 }
 
 module.exports = { forwardGeocode, reverseGeocode };

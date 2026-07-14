@@ -14,6 +14,8 @@ type MapTechnician = {
   lat: number;
   lng: number;
   specialty: string;
+  rating: number;
+  reviews: number;
 };
 
 function validPoint(point: { lat: number; lng: number }) {
@@ -92,6 +94,7 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
             <div className="min-w-44">
               <strong>{technician.name}</strong>
               <div>{technician.specialty || "Technicien HVAC"}</div>
+              <div style={{color:technician.reviews>0?"#d97706":"#64748b"}}>{technician.reviews>0?`★ ${technician.rating}/5 · ${technician.reviews} avis`:"Aucun avis"}</div>
               <div>{technician.distanceKm == null ? "Distance indisponible" : `${technician.distanceKm.toFixed(1)} km`}</div>
               <button type="button" onClick={() => onContact(technician.id)} className="mt-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">
                 Contacter

@@ -14,6 +14,10 @@ class PricingOrchestrator {
     }
     const filterHelp = this.filterHelp(text, history);
     if (filterHelp) return filterHelp;
+    const coolingClarification = this.clarifyCoolingFailure(text, history);
+    if (coolingClarification) return coolingClarification;
+    const vagueRequest = this.clarifyVagueBreakdown(text, history);
+    if (vagueRequest) return vagueRequest;
 
     let extraction;
     try {
@@ -51,7 +55,10 @@ class PricingOrchestrator {
         return this.human(text, extraction, clientId, "vector_search_unavailable", null, error);
       }
       if (!candidates.length) return this.human(text, extraction, clientId, "no_semantic_match", 0);
-      const best = candidates[0];
+      const best = candidates.find((candidate)=>this.equipmentCompatible(candidate, fault));
+      if (!best) {
+        return { status:"clarification", question:"Le catalogue contient plusieurs types d’appareils incompatibles avec votre description. Pouvez-vous préciser s’il s’agit d’un split mural, d’un climatiseur mobile ou d’un système central ?", extraction };
+      }
       const structural = structuralScore({
         countryMatch: Boolean(extraction.country),
         interventionTypeMatch: best.intervention_type === fault.intervention_type,
@@ -64,10 +71,15 @@ class PricingOrchestrator {
     const routing = decision(confidence, thresholds);
     if (routing.route === "human") return this.human(text, extraction, clientId, "low_confidence", confidence);
 
-    const factorSets = await Promise.all(matches.map(({ fault }) => this.repository.getFactors({
-      country: extraction.country, urgency: extraction.urgency, complexity: extraction.complexity,
-      season: extraction.season, interventionType: fault.intervention_type,
-    })));
+    let factorSets;
+    try {
+      factorSets = await Promise.all(matches.map(({ fault }) => this.repository.getFactors({
+        country: extraction.country, urgency: extraction.urgency, complexity: extraction.complexity,
+        season: extraction.season, interventionType: fault.intervention_type,
+      })));
+    } catch (error) {
+      return this.human(text, extraction, clientId, "pricing_factor_unavailable", confidence, error);
+    }
     const lines = matches.map(({ fault }, index) => calculateLine({
       fault, ...factorSets[index],
       fixedMargin: index === 0 ? factorSets[index].margin : { margin_usd: 0 },
@@ -104,6 +116,32 @@ class PricingOrchestrator {
 
   conversationText(text, history) {
     return [...history.slice(-10).map((message) => message?.text || message?.content || ""), text].join(" ").toLocaleLowerCase("fr");
+  }
+
+  clarifyVagueBreakdown(text, history) {
+    const conversation = this.conversationText(text, history);
+    const current = String(text).toLocaleLowerCase("fr");
+    const namesEquipment = /(clim(?:atiseur|atisation)?|chaudi[eè]re|chauffage|ventilation|pompe [aà] chaleur|split)/i.test(current);
+    const onlyGenericFailure = /\b(en panne|panne|ne marche (?:plus|pas)|hors service|cass[eé])\b/i.test(current);
+    const usefulSymptom = /(ne refroidit|ne chauffe|fuite|bruit|odeur|fum[eé]e|givre|glace|souffle|ventilateur|compresseur|filtre|code erreur|affiche|s['’]arr[eê]te|disjoncte|eau|gaz|pression)/i.test(conversation);
+    if (!namesEquipment || !onlyGenericFailure || usefulSymptom) return null;
+    return {
+      status: "clarification",
+      question: "Que fait exactement l’appareil : il ne démarre pas, ne refroidit plus, fuit, fait du bruit ou affiche un code d’erreur ? Depuis quand ?",
+      extraction: { faults: [], clarification_needed: true, reason: "symptom_missing" },
+    };
+  }
+
+  clarifyCoolingFailure(text, history) {
+    const userText = [...history.filter((message)=>message?.role === "user").map((message)=>message.text || message.content || ""), text].join(" ").toLocaleLowerCase("fr");
+    if (!/(ne refroidit (?:plus|pas)|air (?:pas )?froid|pas de froid)/i.test(userText)) return null;
+    const diagnosticDetail = /(air chaud|souffle (?:bien|faiblement|pas)|ventilateur|unit[eé] ext[eé]rieure|compresseur|givre|glace|fuit|fuite|bruit|odeur|code (?:erreur|[a-z0-9])|voyant|s['’]arr[eê]te|disjoncte|filtre|pression|gaz)/i.test(userText);
+    if (diagnosticDetail) return null;
+    return {
+      status: "clarification",
+      question: "Pour éviter un faux diagnostic : l’appareil souffle-t-il de l’air, l’unité extérieure démarre-t-elle, et voyez-vous du givre, une fuite ou un code d’erreur ?",
+      extraction: { faults: [], clarification_needed: true, reason: "cooling_symptom_insufficient" },
+    };
   }
 
   filterHelp(text, history) {
@@ -158,6 +196,14 @@ class PricingOrchestrator {
     const reference = `${row.category} ${row.subcategory} ${row.name}`.toLowerCase();
     const terms = String(fault.equipment_type || "").toLowerCase().split(/\s+/).filter((term) => term.length > 3);
     return terms.length === 0 || terms.some((term) => reference.includes(term));
+  }
+
+  equipmentCompatible(row, fault) {
+    const reference = `${row.category} ${row.subcategory} ${row.name}`.toLowerCase();
+    const requested = String(fault.equipment_type || "").toLowerCase();
+    if (/split/.test(requested) && /central|gainable|rooftop/.test(reference)) return false;
+    if (/central|gainable|rooftop/.test(requested) && /split|mobile/.test(reference)) return false;
+    return true;
   }
 
   async human(text, extraction, clientId, failureCode, confidence, error = null) {

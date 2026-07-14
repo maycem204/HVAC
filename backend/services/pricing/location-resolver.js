@@ -53,10 +53,11 @@ function countryFromCoordinates(lat, lng) {
   const latitude = Number(lat);
   const longitude = Number(lng);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return REFERENCE_POINTS.reduce((best, [pointLat, pointLng, country]) => {
+  const nearest = REFERENCE_POINTS.reduce((best, [pointLat, pointLng, country]) => {
     const distance = distanceKm(latitude, longitude, pointLat, pointLng);
     return !best || distance < best.distance ? { country, distance } : best;
-  }, null)?.country || null;
+  }, null);
+  return nearest && nearest.distance <= 350 ? nearest.country : null;
 }
 
 function resolvePricingCountry({ text, explicitCountry, instantLocation, profile }) {
@@ -65,6 +66,7 @@ function resolvePricingCountry({ text, explicitCountry, instantLocation, profile
     || countryFromText(instantLocation?.city)
     || countryFromCoordinates(instantLocation?.lat, instantLocation?.lng)
     || countryFromText(profile?.city)
+    || countryFromText(profile?.address)
     || countryFromCoordinates(profile?.lat, profile?.lng)
     || null;
 }

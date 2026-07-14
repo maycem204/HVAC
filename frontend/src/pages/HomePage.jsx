@@ -78,7 +78,6 @@ export default function HomePage({ setUser, setUserRole }) {
       }
 
       const { data } = await api.post(endpoint, payload)
-      console.log('Response data:', data)
 
       localStorage.setItem('token', data.token)
       

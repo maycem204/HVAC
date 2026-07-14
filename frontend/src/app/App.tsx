@@ -20,7 +20,7 @@ type View = "home" | "auth" | "location" | "client" | "tech";
 type ClientTab = "chat" | "rdv" | "map" | "messages";
 type TechTab = "leads" | "tarifs" | "agenda" | "messages";
 type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
-type PriceDecision = "accept" | "negotiate" | "decline" | null;
+type PriceDecision = "accept" | "decline" | null;
 
 interface AppUser { id: number; name: string; email: string; phone: string; address: string; city: string; role: Role; avatar: string; lat?: number; lng?: number; }
 interface ChatMsg { role: "bot" | "user"; text: string; }
@@ -31,17 +31,20 @@ interface Notification {
   title: string; message: string; time: string; read: boolean;
 }
 
+interface SuggestedSlot { date: string; label: string; time: string; techId: number; }
+
 interface Appointment {
   id: number; client: string; clientId?: number;
   technicianId: number; technicianName: string;
   clientPhone?: string; technicianPhone?: string;
   date: string; time: string; service: string; faultType?: string;
   estimatedPrice: number; actualPrice?: number; status: AppointmentStatus;
+  currency: string;
   address: string; duration?: string; caseDescription?: string;
   clientConfirmedPrice?: boolean; rating?: number; feedback?: string;
 }
 
-interface PriceItem { id?: number; service: string; unit: string; price: number; category: string; }
+interface PriceItem { id?: number; service: string; unit: string; price: number; category: string; country_code?: string; currency?: string; }
 
 interface Technician {
   id: number; name: string; specialty: string; specializations: string[];
@@ -167,6 +170,7 @@ function mapAppointment(row: any): Appointment {
     service: row.service,
     faultType: row.fault_type,
     estimatedPrice: Number(row.estimated_price ?? 0),
+    currency: row.currency || "EUR",
     actualPrice: row.actual_price != null ? Number(row.actual_price) : undefined,
     status: row.status,
     address: row.address,
@@ -242,8 +246,9 @@ function useSpeechRecognition(onResult: (text: string) => void) {
 
 // ─── Notification Panel ───────────────────────────────────────────────────────
 
-function NotificationPanel({ notifications, onRead, onReadAll, onClose }:
-  { notifications: Notification[]; onRead: (id: number) => void; onReadAll: () => void; onClose: () => void }) {
+function NotificationPanel({ notifications, onSelect, onReadAll, onClose }:
+  { notifications: Notification[]; onSelect: (notification: Notification) => void; onReadAll: () => void; onClose: () => void }) {
+  const unreadNotifications = notifications.filter((notification)=>!notification.read);
   const icons: Record<string, { el: React.ReactNode; cls: string }> = {
     lead: { el:<Tag className="w-3.5 h-3.5"/>, cls:"bg-blue-100 text-blue-600" },
     rdv: { el:<Calendar className="w-3.5 h-3.5"/>, cls:"bg-emerald-100 text-emerald-600" },
@@ -251,20 +256,21 @@ function NotificationPanel({ notifications, onRead, onReadAll, onClose }:
     rating: { el:<Star className="w-3.5 h-3.5"/>, cls:"bg-purple-100 text-purple-600" },
     system: { el:<Info className="w-3.5 h-3.5"/>, cls:"bg-gray-100 text-gray-600" },
     reassign: { el:<RefreshCw className="w-3.5 h-3.5"/>, cls:"bg-orange-100 text-orange-600" },
+    message: { el:<MessageCircle className="w-3.5 h-3.5"/>, cls:"bg-cyan-100 text-cyan-700" },
   };
   return (
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div className="absolute top-14 right-4 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden" onClick={(e)=>e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div><div className="font-semibold text-sm text-foreground">Notifications</div><div className="text-xs text-muted-foreground">{notifications.filter((n)=>!n.read).length} non lues</div></div>
+          <div><div className="font-semibold text-sm text-foreground">Notifications</div><div className="text-xs text-muted-foreground">{unreadNotifications.length} non lues</div></div>
           <div className="flex items-center gap-2"><button onClick={onReadAll} className="text-xs text-primary hover:underline">Tout marquer lu</button><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4"/></button></div>
         </div>
         <div className="max-h-96 overflow-y-auto">
-          {notifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">Aucune notification</div>
-          : notifications.map((n) => {
+          {unreadNotifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">Aucune nouvelle notification</div>
+          : unreadNotifications.map((n) => {
             const ni = icons[n.type];
             return (
-              <button key={n.id} onClick={()=>onRead(n.id)} className={`w-full text-left px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 flex items-start gap-3 ${!n.read?"bg-blue-50/30":""}`}>
+              <button key={n.id} onClick={()=>onSelect(n)} className={`w-full text-left px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 flex items-start gap-3 ${!n.read?"bg-blue-50/30":""}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ni?.cls}`}>{ni?.el}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2"><div className={`text-sm text-foreground ${!n.read?"font-semibold":""}`}>{n.title}</div>{!n.read&&<span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1"/>}</div>
@@ -355,16 +361,26 @@ function ProfileModal({ user, role, onClose, onSave }:
 // Géolocalisation réelle : on géocode via l'API (proxy vers un service de
 // géocodage) au lieu de renvoyer des coordonnées codées en dur.
 
-function LocationModal({ role, onDone }: { role: Role; onDone: (loc: UserLocation | null) => void }) {
+function LocationModal({ role, user, onDone }: { role: Role; user: AppUser; onDone: (loc: UserLocation | null) => void }) {
   const [state, setState] = useState<"ask"|"loading"|"done"|"denied">("ask");
-  const [city, setCity] = useState("");
+  const [city, setCity] = useState(user.city || "");
   const [geoError, setGeoError] = useState("");
   const isClient = role === "client";
+
+  async function useProfileLocation() {
+    const query = [user.address, user.city].filter(Boolean).join(", ");
+    if (!query) return onDone(null);
+    try {
+      const { data } = await api.get("/geocode/forward", { params: { city: query } });
+      onDone({ lat:Number(data.lat), lng:Number(data.lng), city:user.city || data.city, district:user.address || data.district || user.city });
+    } catch { onDone({ lat:Number(user.lat||0), lng:Number(user.lng||0), city:user.city, district:user.address || user.city }); }
+  }
 
   function requestGeo() {
     if (!("geolocation" in navigator)) {
       setGeoError("GPS indisponible sur ce navigateur. Saisissez votre ville manuellement.");
       setState("denied");
+      useProfileLocation();
       return;
     }
 
@@ -406,6 +422,7 @@ function LocationModal({ role, onDone }: { role: Role; onDone: (loc: UserLocatio
         };
         setGeoError(messages[error.code] || "GPS indisponible. Saisissez votre ville manuellement.");
         setState("denied");
+        useProfileLocation();
       },
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
     );
@@ -433,7 +450,7 @@ function LocationModal({ role, onDone }: { role: Role; onDone: (loc: UserLocatio
             <button onClick={requestGeo} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-600 hover:bg-emerald-700"}`}><Navigation className="w-4 h-4"/>Utiliser ma position GPS</button>
             <div className="relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"/></div><div className="relative flex justify-center"><span className="px-3 bg-white text-xs text-muted-foreground">ou saisissez votre ville</span></div></div>
             <div className="flex gap-2"><input placeholder="Ex: Alger, Oran…" value={city} onChange={(e)=>setCity(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&manualSubmit()} className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><button onClick={manualSubmit} disabled={!city.trim()} className="h-10 px-4 rounded-lg bg-gray-800 text-white text-sm disabled:opacity-40">OK</button></div>
-            <button onClick={()=>onDone(null)} className="w-full text-center text-xs text-muted-foreground py-1 hover:text-foreground">Passer cette étape</button>
+            <button onClick={useProfileLocation} className="w-full text-center text-xs text-muted-foreground py-1 hover:text-foreground">Continuer avec mon adresse et ma ville</button>
           </div>
         )}
         {state==="loading" && <div className="flex flex-col items-center py-6 gap-3"><div className="w-10 h-10 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">Localisation en cours…</div></div>}
@@ -504,7 +521,6 @@ function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; o
         : { name: form.name, email: form.email, password: form.password, role };
       const { data } = await api.post(url, payload);
 
-      console.log("REPONSE DU BACKEND :", data);
 
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
@@ -530,7 +546,7 @@ function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; o
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode==="register"&&<div><label className="block text-xs font-medium mb-1.5">Nom complet</label><input required value={form.name} onChange={(e)=>setForm((p)=>({...p,name:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>}
             <div><label className="block text-xs font-medium mb-1.5">Email</label><input type="email" required placeholder="votre@email.com" value={form.email} onChange={(e)=>setForm((p)=>({...p,email:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>
-            <div><label className="block text-xs font-medium mb-1.5">Mot de passe</label><div className="relative"><input type={showPass?"text":"password"} required minLength={6} placeholder="••••••••" value={form.password} onChange={(e)=>setForm((p)=>({...p,password:e.target.value}))} className={`w-full h-11 px-4 pr-10 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPass?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button></div></div>
+            <div><label className="block text-xs font-medium mb-1.5">Mot de passe</label><div className="relative"><input type={showPass?"text":"password"} required minLength={mode==="register"?8:1} maxLength={72} autoComplete={mode==="register"?"new-password":"current-password"} placeholder="8 caractères minimum" value={form.password} onChange={(e)=>setForm((p)=>({...p,password:e.target.value}))} className={`w-full h-11 px-4 pr-10 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPass?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button></div>{mode==="register"&&<p className="mt-1.5 text-[11px] text-muted-foreground">Évitez votre nom, votre e-mail et les mots de passe courants.</p>}</div>
             <button type="submit" disabled={loading} className={`w-full h-11 rounded-xl ${bg} text-white text-sm font-semibold mt-2 disabled:opacity-50`}>{loading?"Chargement…":mode==="login"?"Se connecter":"Créer mon compte"}</button>
           </form>
           <div className="mt-5 text-center text-sm text-muted-foreground">{mode==="login"?<>Pas encore de compte ?{" "}<button onClick={()=>setMode("register")} className={`${cl} font-medium hover:underline`}>S'inscrire</button></>:<>Déjà un compte ?{" "}<button onClick={()=>setMode("login")} className={`${cl} font-medium hover:underline`}>Se connecter</button></>}</div>
@@ -585,6 +601,12 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
     setNotifications((ns) => ns.map((n) => ({ ...n, read: true })));
     api.patch("/notifications/read-all").catch(console.error);
   }
+
+  function openNotification(notification: Notification) {
+    markRead(notification.id);
+    const target: ClientTab = notification.type === "message" ? "messages" : notification.type === "rdv" || notification.type === "price" || notification.type === "rating" ? "rdv" : "chat";
+    setTab(target); setNotifOpen(false);
+  }
   const contactTechnician = useCallback((id: number) => setContactTechId(id), []);
   const markContacted = useCallback((id: number) => setContactedTechs((items) => items.includes(id) ? items : [...items, id]), []);
 
@@ -610,7 +632,7 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
         {tab==="map"&&<ClientMap technicians={technicians} location={location} contactedTechs={contactedTechs} onContact={contactTechnician}/>}
         {tab==="messages"&&<ConversationsPanel currentUserId={user.id} onContacted={markContacted}/>}
       </div>
-      {notifOpen&&<NotificationPanel notifications={notifications} onRead={markRead} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
+      {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&(
         <ProfileModal user={user} role="client" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>
       )}
@@ -631,10 +653,11 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number; currency:string; subtotal:number; minimumAdjustment:number }|null>(null);
   const [priceDecision, setPriceDecision] = useState<PriceDecision>(null);
-  const [counterPrice, setCounterPrice] = useState("");
-  const [counterSent, setCounterSent] = useState(false);
   const [showSlots, setShowSlots] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<{ date:string; label:string; time:string; techId:number }|null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<SuggestedSlot|null>(null);
+  const [proposedSlots, setProposedSlots] = useState<SuggestedSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState("");
   const [booked, setBooked] = useState(false);
   const [customDate, setCustomDate] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -645,15 +668,15 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   // Ne jamais afficher une liste vide si des professionnels HVAC sont disponibles : les
   // spécialistes exacts restent prioritaires, puis les généralistes peuvent diagnostiquer.
   const matchingTechs = specialists.length > 0 ? specialists : availableTechs;
-  const slotDate = (offset: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offset);
-    return d.toISOString().slice(0, 10);
-  };
-  const proposedSlots = matchingTechs.flatMap((technician, index) => [
-    { date:slotDate(index === 0 ? 0 : 1), label:index === 0 ? "Aujourd'hui" : "Demain matin", time:index === 0 ? "16:30" : "09:00", techId:technician.id },
-    { date:slotDate(index + 1), label:index === 0 ? "Demain après-midi" : `Dans ${index + 1} jours`, time:index === 0 ? "14:00" : "10:30", techId:technician.id },
-  ]).slice(0, 6);
+  const urgency = /urgent|urgence|fumée|fumee|odeur de brûlé|odeur de brule|fuite|étincelle|etincelle/i.test(messages.map((message)=>message.text).join(" ")) ? "critical" : /rapidement|aujourd'hui|vite|en panne complète/i.test(messages.map((message)=>message.text).join(" ")) ? "urgent" : "normal";
+  async function loadSuggestedSlots() {
+    setSlotsLoading(true); setSelectedSlot(null); setSlotsError("");
+    try {
+      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency } });
+      setProposedSlots((data.slots || []).slice(0, 5).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
+    } catch (err) { console.error(err); setProposedSlots([]); setSlotsError("Impossible de consulter les agendas pour le moment. Réessayez dans quelques instants."); }
+    finally { setSlotsLoading(false); }
+  }
   useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[messages,quote,showSlots,priceDecision]);
 
   async function send(text: string) {
@@ -686,15 +709,8 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
 
   function handlePriceDecision(d: PriceDecision) {
     setPriceDecision(d);
-    if (d==="accept") { setMessages((m)=>[...m,{role:"user",text:"J'accepte ce prix."}]); setTimeout(()=>{ setMessages((m)=>[...m,{role:"bot",text:`Parfait ! Voici les spécialistes en ${faultType} disponibles près de vous.`}]); setShowSlots(true); },400); }
+    if (d==="accept") { setMessages((m)=>[...m,{role:"user",text:"J'accepte ce prix."},{role:"bot",text:`Je consulte maintenant les agendas des spécialistes en ${faultType}.`}]); setShowSlots(true); loadSuggestedSlots(); }
     else if (d==="decline") setMessages((m)=>[...m,{role:"user",text:"Je décline ce prix."},{role:"bot",text:"Pas de problème. Souhaitez-vous une évaluation gratuite sur site ? Un technicien pourra vous donner un devis précis."}]);
-  }
-
-  async function sendCounter() {
-    if (!counterPrice) return; setCounterSent(true);
-    setMessages((m)=>[...m,{role:"user",text:`Je propose ${counterPrice} ${quote?.currency || ""}.`},{role:"bot",text:`Votre proposition de ${counterPrice} ${quote?.currency || ""} est transmise aux techniciens disponibles. Nous vous recontactons sous 30 minutes.`}]);
-    setPriceDecision(null);
-    try { await api.post("/chat/counter-offer", { amount: Number(counterPrice), faultType }); } catch (err) { console.error(err); }
   }
 
   async function confirmSlot() {
@@ -708,6 +724,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         service: `Diagnostic ${faultType}`,
         faultType,
         estimatedPrice: quote?.price ?? 0,
+        currency: quote?.currency || "EUR",
       });
       onAppointmentCreated(mapAppointment(data));
       onContact(tech.id); setBooked(true); setShowSlots(false);
@@ -755,23 +772,12 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
               </div>
               {quote.minimumAdjustment > 0 && <div className="mt-2 text-xs opacity-80">Minimum local de déplacement et d’intervention inclus.</div>}
             </div>
-            {!priceDecision&&!counterSent&&(
+            {!priceDecision&&(
               <div className="px-4 pb-4 border-t border-gray-100 pt-4">
                 <div className="text-sm font-medium text-foreground mb-3">Que souhaitez-vous faire ?</div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button onClick={()=>handlePriceDecision("accept")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"><ThumbsUp className="w-5 h-5"/><span className="text-xs font-semibold">Accepter</span></button>
-                  <button onClick={()=>handlePriceDecision("negotiate")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-700"><Pencil className="w-5 h-5"/><span className="text-xs font-semibold">Négocier</span></button>
                   <button onClick={()=>handlePriceDecision("decline")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 text-red-600"><ThumbsDown className="w-5 h-5"/><span className="text-xs font-semibold">Décliner</span></button>
-                </div>
-              </div>
-            )}
-            {priceDecision==="negotiate"&&!counterSent&&(
-              <div className="px-4 pb-4 border-t border-gray-100 pt-4">
-                <div className="text-sm font-medium mb-2">Votre budget maximum</div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1"><input type="number" placeholder={String(Math.max(0, Math.round(quote.price * 0.9)))} value={counterPrice} onChange={(e)=>setCounterPrice(e.target.value)} className="w-full h-10 px-3 pr-14 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{quote.currency}</span></div>
-                  <button onClick={sendCounter} disabled={!counterPrice} className="h-10 px-4 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40">Envoyer</button>
-                  <button onClick={()=>setPriceDecision(null)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm text-muted-foreground">✕</button>
                 </div>
               </div>
             )}
@@ -779,9 +785,11 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         )}
         {showSlots&&!booked&&(
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-100"><div className="text-sm font-semibold">Spécialistes {faultType} disponibles</div><div className="text-xs text-muted-foreground mt-0.5">{matchingTechs.length} technicien(s) disponible(s){specialists.length === 0 && matchingTechs.length > 0 ? " — généralistes HVAC proposés" : " pour votre panne"}</div></div>
+            <div className="p-4 border-b border-gray-100"><div className="text-sm font-semibold">Spécialistes {faultType} disponibles</div><div className="text-xs text-muted-foreground mt-0.5">{slotsLoading?"Consultation des agendas…":`${new Set(proposedSlots.map((slot)=>slot.techId)).size} technicien(s) avec un créneau compatible`}</div></div>
             <div className="p-3 space-y-2">
-              {proposedSlots.length===0&&<div className="p-4 text-sm text-muted-foreground text-center">Aucun créneau disponible actuellement. Consultez l’onglet Techniciens pour envoyer un message.</div>}
+              {slotsLoading&&<div className="p-4 text-sm text-muted-foreground text-center"><RefreshCw className="w-4 h-4 animate-spin inline mr-2"/>Recherche intelligente dans les agendas…</div>}
+              {!slotsLoading&&slotsError&&<div className="p-4 text-sm text-red-600 bg-red-50 rounded-xl text-center">{slotsError}<button onClick={loadSuggestedSlots} className="block mx-auto mt-2 text-xs font-semibold underline">Réessayer</button></div>}
+              {!slotsLoading&&!slotsError&&proposedSlots.length===0&&<div className="p-4 text-sm text-muted-foreground text-center">Aucun agenda libre parmi les spécialistes compatibles. Vous pouvez leur envoyer un message.</div>}
               {proposedSlots.map((slot,i)=>{
                 const tech = technicians.find((t)=>t.id===slot.techId); if(!tech) return null;
                 const isSel = selectedSlot?.date===slot.date&&selectedSlot?.time===slot.time&&selectedSlot?.techId===slot.techId;
@@ -856,7 +864,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
                 <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
                   <div className="flex items-start justify-between"><div><div className="font-semibold text-foreground">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="confirmed"?"green":"amber"}>{appt.status==="confirmed"?"Confirmé":"En attente"}</Badge></div>
                   <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div><div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/>{appt.time}</div><div className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/>{appt.address}</div></div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">Prix estimé : </span><span className="font-bold">{appt.estimatedPrice} €</span></div>
+                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">Prix estimé : </span><span className="font-bold">{appt.estimatedPrice} {appt.currency}</span></div>
                   {ratable&&!appt.rating&&!showFb&&<button onClick={()=>setFeedbackAppt(appt.id)} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1"><Star className="w-3.5 h-3.5"/>Évaluer</button>}
                   {showFb&&(
                     <div className="mt-3 space-y-2 pt-3 border-t border-gray-100">
@@ -887,13 +895,13 @@ function ClientRdv({ technicians, appointments, setAppointments }:
             {isExp&&(
               <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
                 <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm mb-3"><div><div className="text-xs text-muted-foreground mb-1">Prix estimé</div><div className="font-medium">{appt.estimatedPrice} €</div></div><div><div className="text-xs text-muted-foreground mb-1">Prix réel</div><div className="text-lg font-bold">{appt.actualPrice??"—"} €</div></div></div>
-                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>Confirmez-vous avoir payé ce montant ?</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">Oui, j'ai payé {appt.actualPrice} €</button></div>}
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-3"><div><div className="text-xs text-muted-foreground mb-1">Prix estimé</div><div className="font-medium">{appt.estimatedPrice} {appt.currency}</div></div><div><div className="text-xs text-muted-foreground mb-1">Prix réel</div><div className="text-lg font-bold">{appt.actualPrice??"—"} {appt.currency}</div></div></div>
+                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>Confirmez-vous avoir payé ce montant ?</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">Oui, j'ai payé {appt.actualPrice} {appt.currency}</button></div>}
                   {appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200 flex items-center gap-2 text-xs text-emerald-600"><CheckCircle2 className="w-3.5 h-3.5"/>Prix confirmé</div>}
                 </div>
                 {appt.caseDescription&&<div><div className="text-xs font-medium text-muted-foreground mb-2">Description</div><div className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">{appt.caseDescription}</div></div>}
-                {canRate(appt)&&(appt.feedback?(
-                  <div><div className="text-xs font-medium text-muted-foreground mb-2">Votre avis</div><div className="flex gap-1 mb-1">{[1,2,3,4,5].map((s)=><Star key={s} className={`w-4 h-4 ${s<=appt.rating!?"text-amber-400 fill-amber-400":"text-gray-300"}`}/>)}</div><div className="text-sm">{appt.feedback}</div></div>
+                {canRate(appt)&&(appt.feedback&&!showFb?(
+                  <div><div className="text-xs font-medium text-muted-foreground mb-2">Votre avis</div><div className="flex gap-1 mb-1">{[1,2,3,4,5].map((s)=><Star key={s} className={`w-4 h-4 ${s<=appt.rating!?"text-amber-400 fill-amber-400":"text-gray-300"}`}/>)}</div><div className="text-sm">{appt.feedback}</div><button onClick={()=>{setFeedback({rating:appt.rating||0,comment:appt.feedback||""});setFeedbackAppt(appt.id);}} className="mt-2 text-xs text-primary hover:underline">Modifier votre évaluation</button></div>
                 ):!showFb?(
                   <button onClick={()=>setFeedbackAppt(appt.id)} className="w-full h-9 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 flex items-center justify-center gap-2"><MessageCircle className="w-4 h-4"/>Laisser un avis</button>
                 ):(
@@ -924,6 +932,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
   const [ratings, setRatings] = useState<Record<number,{rating:number;comment:string}>>({});
   const [ratingStats, setRatingStats] = useState<Record<number,{rating:number;reviews:number}>>({});
   const [ratingDraft, setRatingDraft] = useState({rating:0,comment:""});
+  const [publicRatings, setPublicRatings] = useState<Record<number,Array<{rating:number;comment:string;client_name:string;updated_at:string}>>>({});
   const filtered = technicians.filter((t)=>(!showAvailOnly||t.available)&&(!filterSpec||t.specializations.includes(filterSpec))&&(!search||t.name.toLowerCase().includes(search.toLowerCase())||t.specializations.some((s)=>s.toLowerCase().includes(search.toLowerCase())))).sort((a,b)=>(a.distanceKm??Infinity)-(b.distanceKm??Infinity));
 
   async function submitRating(techId: number) {
@@ -931,8 +940,17 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
       const { data } = await api.post(`/technicians/${techId}/ratings`, ratingDraft);
       setRatings((r)=>({...r,[techId]:ratingDraft}));
       setRatingStats((stats)=>({...stats,[techId]:{rating:Number(data.rating||0),reviews:Number(data.reviews_count||0)}}));
+      const reviews = await api.get(`/technicians/${techId}/ratings`);
+      setPublicRatings((current)=>({...current,[techId]:reviews.data}));
     } catch (err) { console.error(err); }
     setRatingTech(null); setRatingDraft({rating:0,comment:""});
+  }
+
+  async function selectTechnician(id: number) {
+    const next = selected===id ? null : id; setSelected(next);
+    if (next && !publicRatings[id]) {
+      try { const {data}=await api.get(`/technicians/${id}/ratings`); setPublicRatings((current)=>({...current,[id]:data})); } catch (err) { console.error(err); }
+    }
   }
 
   return (
@@ -957,7 +975,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
             const aggregateReviews = ratingStats[t.id]?.reviews ?? t.reviews;
             return (
               <div key={t.id} className={`border-b border-gray-50 transition-colors ${selected===t.id?"bg-blue-50":"hover:bg-gray-50"}`}>
-                <button onClick={()=>setSelected(selected===t.id?null:t.id)} className="w-full text-left p-4">
+                <button onClick={()=>selectTechnician(t.id)} className="w-full text-left p-4">
                   <div className="flex items-start gap-3">
                     <div className="relative"><Avatar initials={t.avatar} color={t.color}/>{t.available&&<span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-white"/>}</div>
                     <div className="flex-1 min-w-0">
@@ -972,6 +990,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="w-3.5 h-3.5"/>Répond en {t.response}</div>
                     <div className="text-xs font-medium text-primary">{t.price}</div>
                     <div className="flex flex-wrap gap-1">{t.tags.map((tag)=><span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">{tag}</span>)}</div>
+                    {aggregateReviews>0&&<div className="rounded-lg border border-gray-100 bg-white p-2 space-y-2"><div className="text-[11px] font-semibold text-muted-foreground">Avis clients récents</div>{(publicRatings[t.id]||[]).slice(0,3).map((review,index)=><div key={index} className="border-t border-gray-50 pt-2"><div className="flex items-center justify-between"><span className="text-xs font-medium">{review.client_name}</span><span className="text-xs text-amber-500">{"★".repeat(review.rating)}</span></div>{review.comment&&<p className="text-xs text-muted-foreground mt-0.5">{review.comment}</p>}</div>)}</div>}
                     <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">Contacter ce technicien</button>
                     {ratingAllowed&&!isRating&&<button onClick={()=>{setRatingTech(t.id);setRatingDraft({rating:personalRating||0,comment:existing?.comment||""});}} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{personalRating?`Votre note : ${personalRating}/5 — modifier`:"Évaluer ce technicien"}</button>}
                     {!ratingAllowed&&<div className="text-[11px] text-muted-foreground text-center">Contactez ce technicien pour pouvoir l’évaluer.</div>}
@@ -991,7 +1010,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
       </div>
 
       <div className="flex-1 min-h-[420px] relative overflow-hidden">
-        <TechnicianMap technicians={filtered} location={location} selectedId={selected} onSelect={setSelected} onContact={onContact}/>
+        <TechnicianMap technicians={filtered} location={location} selectedId={selected} onSelect={selectTechnician} onContact={onContact}/>
         <div className="absolute z-[1000] bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5 pointer-events-none">
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">Disponible</span></div>
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">Contacté</span></div>
@@ -1039,6 +1058,12 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
     api.patch("/notifications/read-all").catch(console.error);
   }
 
+  function openTechNotification(notification: Notification) {
+    markRead(notification.id);
+    const target: TechTab = notification.type === "message" ? "messages" : notification.type === "lead" || notification.type === "reassign" ? "leads" : notification.type === "rdv" || notification.type === "price" ? "agenda" : "leads";
+    setTab(target); setNotifOpen(false);
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between">
@@ -1057,10 +1082,10 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
       <div className="flex-1 overflow-y-auto">
         {tab==="leads"&&<TechLeads/>}
         {tab==="messages"&&<ConversationsPanel currentUserId={user.id}/>}
-        {tab==="tarifs"&&<TechTarifs/>}
+        {tab==="tarifs"&&<TechTarifs city={user.city}/>}
         {tab==="agenda"&&<TechAgenda/>}
       </div>
-      {notifOpen&&<NotificationPanel notifications={notifications} onRead={markRead} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
+      {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openTechNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&<ProfileModal user={user} role="technician" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
     </div>
   );
@@ -1074,6 +1099,8 @@ function TechLeads() {
   const [reassigning, setReassigning] = useState<number|null>(null);
   const [reassigned, setReassigned] = useState<Record<number,string>>({});
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<number|null>(null);
 
   const refreshLeads = useCallback(() => {
     api.get("/leads").then((res) => setLeads(res.data.map(mapLead))).catch(console.error).finally(() => setLoading(false));
@@ -1088,7 +1115,7 @@ function TechLeads() {
     return () => { socket.off("lead:new", refreshLeads); socket.off("appointment:new", refreshLeads); };
   }, [refreshLeads]);
 
-  const filtered = filter==="all"?leads:leads.filter((l)=>l.status===filter);
+  const filtered = leads.filter((lead)=>(filter==="all"||lead.status===filter) && [lead.client,lead.problem,lead.city,lead.faultType].join(" ").toLowerCase().includes(query.toLowerCase()));
 
   async function accept(id: number) {
     try {
@@ -1116,9 +1143,10 @@ function TechLeads() {
         <div><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Leads entrants</h2><p className="text-sm text-muted-foreground">Si vous déclinez, le moteur IA cherche automatiquement un autre technicien.</p></div>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">{(["all","new","accepted","done"] as const).map((f)=><button key={f} onClick={()=>setFilter(f)} className={`px-3 h-7 rounded-md text-xs font-medium ${filter===f?"bg-white shadow-sm text-foreground":"text-muted-foreground"}`}>{f==="all"?"Tous":f==="new"?"Nouveaux":f==="accepted"?"Acceptés":"Terminés"}</button>)}</div>
       </div>
+      <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder="Rechercher un client, une panne ou une ville…" className="w-full h-10 pl-10 pr-3 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-blue-400"/></div>
       {loading && <div className="text-sm text-muted-foreground">Chargement des leads…</div>}
       <div className="space-y-3">{filtered.map((lead)=>(
-        <div key={lead.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+        <div key={lead.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{lead.client[0]}</div>
             <div className="flex-1 min-w-0">
@@ -1126,6 +1154,8 @@ function TechLeads() {
               <div className="mt-2 text-sm">{lead.problem}</div>
               {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} à {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
               <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">Confiance IA</div><ConfidenceBar value={lead.confidence}/></div>
+              <button onClick={()=>setExpanded(expanded===lead.id?null:lead.id)} className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1">{expanded===lead.id?"Masquer les détails":"Voir toutes les informations"}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded===lead.id?"rotate-180":""}`}/></button>
+              {expanded===lead.id&&<div className="mt-3 grid sm:grid-cols-2 gap-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs"><div><span className="text-muted-foreground">Demande :</span> {lead.problem}</div><div><span className="text-muted-foreground">Catégorie :</span> {lead.faultType}</div><div><span className="text-muted-foreground">Créneau :</span> {lead.requestedDate?`${String(lead.requestedDate).slice(0,10)} ${String(lead.requestedTime||"").slice(0,5)}`:"À définir"}</div><div><span className="text-muted-foreground">Adresse :</span> {lead.address||lead.city||"Non renseignée"}</div><div><span className="text-muted-foreground">Estimation :</span> {lead.price} €</div><div><span className="text-muted-foreground">Statut :</span> {lead.status}</div></div>}
               {reassigning===lead.id?<div className="mt-3 flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="w-4 h-4 animate-spin"/>Moteur IA recherche un autre technicien…</div>
               :reassigned[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4 shrink-0"/>Lead réassigné à <strong>{reassigned[lead.id]}</strong> — client notifié.</div>
               :(
@@ -1146,7 +1176,7 @@ function TechLeads() {
 
 // ─── Tech Tarifs ──────────────────────────────────────────────────────────────
 
-function TechTarifs() {
+function TechTarifs({ city }: { city: string }) {
   const [tarifs, setTarifs] = useState<PriceItem[]>([]);
   const [editing, setEditing] = useState<number|null>(null);
   const [editVal, setEditVal] = useState("");
@@ -1154,11 +1184,15 @@ function TechTarifs() {
   const [newTarif, setNewTarif] = useState({service:"",unit:"",price:"",category:"Base"});
   const [uploadStatus, setUploadStatus] = useState<"idle"|"processing"|"success"|"error">("idle");
   const [uploadError, setUploadError] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [showTariffDetails, setShowTariffDetails] = useState(false);
+  const [profileCurrency, setProfileCurrency] = useState("…");
   const categories = Array.from(new Set(["Base","Réparation","Maintenance","Installation","Urgence",...tarifs.map((tarif)=>tarif.category).filter(Boolean)]));
 
   useEffect(() => {
     api.get("/tarifs").then((res) => setTarifs(res.data)).catch(console.error);
-  }, []);
+    api.get("/tarifs/context").then((res)=>setProfileCurrency(res.data.currency)).catch(()=>setProfileCurrency(`Ville à préciser (${city||"profil"})`));
+  }, [city]);
 
   const onDrop = useCallback(async (accepted: File[])=>{
     const file = accepted[0]; if(!file) return;
@@ -1168,6 +1202,7 @@ function TechTarifs() {
       const { data } = await api.post("/tarifs/import-file", form, { headers:{"Content-Type":"multipart/form-data"} });
       setTarifs(data.items);
       setUploadStatus("success");
+      setShowTariffDetails(false);
     } catch (error: any) {
       setUploadError(error?.response?.data?.error || "Impossible d’extraire cette grille tarifaire.");
       setUploadStatus("error");
@@ -1203,40 +1238,41 @@ function TechTarifs() {
   const grouped = categories.reduce<Record<string,PriceItem[]>>((acc,cat)=>{acc[cat]=tarifs.filter((t)=>t.category===cat);return acc;},{});
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6"><div><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Ma grille tarifaire</h2><p className="text-sm text-muted-foreground">Importez vos tarifs depuis un fichier ou gérez-les manuellement.</p></div><button onClick={()=>setShowAdd(!showAdd)} className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600"><Plus className="w-4 h-4"/>Ajouter</button></div>
-      <div className="mb-6">
+      <div className="flex items-center justify-between mb-6"><div><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Ma grille tarifaire</h2><p className="text-sm text-muted-foreground">Devise déterminée par votre ville : <strong>{profileCurrency}</strong>.</p></div><div className="flex flex-wrap justify-end gap-2"><button onClick={()=>setShowImport(!showImport)} className="flex items-center gap-2 h-9 px-4 rounded-lg border border-gray-200 bg-white text-sm font-semibold hover:bg-gray-50"><Upload className="w-4 h-4"/>Importer un fichier</button><button onClick={()=>setShowTariffDetails((visible)=>!visible)} className="flex items-center gap-2 h-9 px-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100">{showTariffDetails?"Masquer les informations":"Modifier les informations"}</button></div></div>
+      {showImport&&<div className="mb-6">
         <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${isDragActive?"border-emerald-400 bg-emerald-50":uploadStatus==="success"?"border-emerald-300 bg-emerald-50":uploadStatus==="error"?"border-red-300 bg-red-50":"border-gray-200 hover:border-emerald-300 bg-gray-50"}`}>
           <input {...getInputProps()}/>
           {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?"Déposez ici":"Importez votre grille tarifaire"}</div><div className="text-xs text-muted-foreground">CSV, Excel .xlsx/.xlsm ou PDF texte — 5 Mo maximum</div></>}
           {uploadStatus==="processing"&&<div className="flex flex-col items-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">Extraction en cours…</div></div>}
-          {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">{tarifs.length} services importés</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">Importer un autre fichier</button></>}
+          {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">Grille importée en {profileCurrency}</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">Importer un autre fichier</button></>}
           {uploadStatus==="error"&&<><AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400"/><div className="text-sm font-medium text-red-600 mb-1">Extraction impossible</div><div className="text-xs text-red-500 mb-2">{uploadError}</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");setUploadError("");}} className="text-xs text-primary hover:underline">Réessayer</button></>}
         </div>
-      </div>
-      {showAdd&&(
+      </div>}
+      {showTariffDetails&&<div className="mb-4 flex justify-end"><button onClick={()=>setShowAdd(!showAdd)} className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600"><Plus className="w-4 h-4"/>Ajouter un tarif</button></div>}
+      {showTariffDetails&&showAdd&&(
         <div className="bg-white rounded-xl border border-emerald-200 p-5 mb-5 shadow-sm">
           <div className="text-sm font-semibold mb-4">Nouveau service</div>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">Intitulé</label><input placeholder="Ex : Nettoyage filtre" value={newTarif.service} onChange={(e)=>setNewTarif((p)=>({...p,service:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
             <div><label className="block text-xs text-muted-foreground mb-1">Unité</label><input placeholder="/ appareil" value={newTarif.unit} onChange={(e)=>setNewTarif((p)=>({...p,unit:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
-            <div><label className="block text-xs text-muted-foreground mb-1">Prix (€)</label><input type="number" placeholder="0" value={newTarif.price} onChange={(e)=>setNewTarif((p)=>({...p,price:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div><label className="block text-xs text-muted-foreground mb-1">Prix ({profileCurrency})</label><input type="number" placeholder="0" value={newTarif.price} onChange={(e)=>setNewTarif((p)=>({...p,price:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
             <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">Catégorie</label><select value={newTarif.category} onChange={(e)=>setNewTarif((p)=>({...p,category:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400">{categories.map((c)=><option key={c}>{c}</option>)}</select></div>
           </div>
           <div className="flex gap-2"><button onClick={addTarif} className="h-8 px-4 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600">Ajouter</button><button onClick={()=>setShowAdd(false)} className="h-8 px-4 rounded-lg border border-gray-200 text-xs text-muted-foreground">Annuler</button></div>
         </div>
       )}
-      <div className="space-y-5">{categories.map((cat)=>{ const items=grouped[cat]; if(!items?.length) return null; return (
+      {showTariffDetails&&<div className="space-y-5">{categories.map((cat)=>{ const items=grouped[cat]; if(!items?.length) return null; return (
         <div key={cat}><div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{cat}</span><div className="flex-1 h-px bg-gray-100"/></div>
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">{items.map((t,i)=>(
           <div key={t.id ?? i} className={`flex items-center px-4 py-3.5 ${i<items.length-1?"border-b border-gray-50":""} hover:bg-gray-50 group`}>
             <div className="flex-1"><div className="text-sm font-medium">{t.service}</div><div className="text-xs text-muted-foreground">{t.unit}</div></div>
-            {editing===t.id?<div className="flex items-center gap-2"><input type="number" value={editVal} onChange={(e)=>setEditVal(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&saveEdit(t)} autoFocus className="w-24 h-8 px-2 rounded-lg border border-emerald-300 text-sm text-right focus:outline-none"/><span className="text-sm text-muted-foreground">€</span><button onClick={()=>saveEdit(t)} className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center"><Check className="w-3.5 h-3.5"/></button><button onClick={()=>setEditing(null)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground"><X className="w-3.5 h-3.5"/></button></div>
-            :<div className="flex items-center gap-3"><span className="text-base font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{t.price} €</span><button onClick={()=>{setEditing(t.id!);setEditVal(String(t.price));}} className="opacity-0 group-hover:opacity-100 text-xs text-primary hover:underline transition-opacity">Modifier</button></div>}
+            {editing===t.id?<div className="flex items-center gap-2"><input type="number" value={editVal} onChange={(e)=>setEditVal(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&saveEdit(t)} autoFocus className="w-24 h-8 px-2 rounded-lg border border-emerald-300 text-sm text-right focus:outline-none"/><span className="text-sm text-muted-foreground">{t.currency||profileCurrency}</span><button onClick={()=>saveEdit(t)} className="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center"><Check className="w-3.5 h-3.5"/></button><button onClick={()=>setEditing(null)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground"><X className="w-3.5 h-3.5"/></button></div>
+            :<div className="flex items-center gap-3"><span className="text-base font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{t.price} {t.currency||profileCurrency}</span><button onClick={()=>{setEditing(t.id!);setEditVal(String(t.price));}} className="opacity-0 group-hover:opacity-100 text-xs text-primary hover:underline transition-opacity">Modifier</button></div>}
           </div>
         ))}
         </div></div>
       );})}
-      </div>
+      </div>}
       <div className="mt-6 p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-sm text-emerald-800"><strong>Synchronisation automatique.</strong> Vos tarifs alimentent le moteur IA pour les estimations clients.</div>
     </div>
   );
@@ -1290,16 +1326,20 @@ function TechAgenda() {
 
   function dateStr(day: number) { return `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; }
   function apptForDay(day: number) { return appointments.filter((a)=>String(a.date).slice(0,10)===dateStr(day)); }
-  function isBlockedDay(day: number) {
+  function blocksForDay(day: number) {
     const dow=(new Date(year,month,day).getDay()+6)%7;
-    return blockedSlots.some((b)=>(
+    return blockedSlots.filter((b)=>(
       b.type==="weekly"&&b.weekDays?.includes(dow)
     ) || (
       b.type==="specific"&&String(b.date).slice(0,10)===dateStr(day)
-    ));
+    ) || b.type==="daily");
+  }
+  function isFullyBlockedDay(day: number) {
+    return blocksForDay(day).some((block)=>block.startTime?.slice(0,5)==="00:00" && ["23:59","00:00"].includes(block.endTime?.slice(0,5)));
   }
   function dayColor(day: number) {
-    if(isBlockedDay(day)) return "bg-gray-100 border-gray-300 text-gray-400";
+    if(isFullyBlockedDay(day)) return "bg-gray-100 border-gray-300 text-gray-400";
+    if(blocksForDay(day).length) return "bg-amber-50 border-amber-300 text-amber-800 hover:border-amber-400";
     const apts=apptForDay(day);
     if(!apts.length) return "bg-white border-gray-200 text-foreground hover:border-blue-300";
     if(apts.every((a)=>a.status==="completed")) return "bg-emerald-100 border-emerald-400 text-emerald-800";
@@ -1363,7 +1403,7 @@ function TechAgenda() {
             <div className="grid grid-cols-7 gap-1">{calDays.map((day,i)=>{
               if(!day) return <div key={i}/>;
               const isSel=day===selectedDay; const isToday=day===today.getDate()&&month===today.getMonth()&&year===today.getFullYear();
-              return <button key={i} onClick={()=>!isBlockedDay(day)&&setSelectedDay(day)} className={`aspect-square rounded-lg border text-xs font-medium transition-all relative ${dayColor(day)} ${isSel?"ring-2 ring-primary ring-offset-1":""} ${isToday?"font-black":""}`}>{day}{apptForDay(day).length>0&&!isBlockedDay(day)&&<span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-current opacity-70"/>}</button>;
+              return <button key={i} onClick={()=>setSelectedDay(day)} className={`aspect-square rounded-lg border text-xs font-medium transition-all relative ${dayColor(day)} ${isSel?"ring-2 ring-primary ring-offset-1":""} ${isToday?"font-black":""}`}>{day}{apptForDay(day).length>0&&<span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-current opacity-70"/>}</button>;
             })}</div>
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">{[["bg-emerald-100 border-emerald-400","Terminé"],["bg-blue-100 border-blue-400","Prévu"],["bg-gray-100 border-gray-300","Indisponible"]].map(([cls,l])=><div key={l} className="flex items-center gap-2 text-xs"><div className={`w-4 h-4 rounded border ${cls}`}/><span className="text-muted-foreground">{l}</span></div>)}</div>
           </div>
@@ -1376,9 +1416,9 @@ function TechAgenda() {
           </div>
         </div>
         <div>
-          <div className="mb-4"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{new Date(year,month,selectedDay).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</h2><p className="text-sm text-muted-foreground">{dayApts.length} rendez-vous{isBlockedDay(selectedDay)&&" · Jour indisponible"}</p></div>
-          {isBlockedDay(selectedDay)&&<div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 flex items-center gap-3 text-sm text-gray-600"><BanIcon className="w-5 h-5 text-gray-400 shrink-0"/>Ce jour est marqué comme indisponible — aucun lead reçu.</div>}
-          {dayApts.length===0&&!isBlockedDay(selectedDay)?<div className="bg-white rounded-xl border border-gray-100 p-12 text-center shadow-sm"><Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40"/><div className="text-sm text-muted-foreground">Aucun rendez-vous ce jour</div></div>:(
+          <div className="mb-4"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{new Date(year,month,selectedDay).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</h2><p className="text-sm text-muted-foreground">{dayApts.length} rendez-vous · {blocksForDay(selectedDay).length} indisponibilité(s)</p></div>
+          {blocksForDay(selectedDay).length>0&&<div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-start gap-3 text-sm text-amber-800"><BanIcon className="w-5 h-5 shrink-0"/><div><strong>Créneaux bloqués :</strong> {blocksForDay(selectedDay).map((block)=>`${block.startTime.slice(0,5)}–${block.endTime.slice(0,5)}`).join(", ")}. Le reste de la journée demeure disponible.</div></div>}
+          {dayApts.length===0?<div className="bg-white rounded-xl border border-gray-100 p-12 text-center shadow-sm"><Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40"/><div className="text-sm text-muted-foreground">Aucun rendez-vous ce jour</div></div>:(
             <div className="space-y-3">{dayApts.map((appt)=>{ const s=ss[appt.status]; return (
               <div key={appt.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex gap-4">
                 <div className="text-center w-16 shrink-0"><div className="text-sm font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{appt.time}</div><div className="text-xs text-muted-foreground">{appt.duration}</div><div className={`w-2.5 h-2.5 rounded-full mx-auto mt-2 ${s.dot}`}/></div>
@@ -1467,6 +1507,9 @@ export default function App() {
         const lng = Number(currentUser.lng);
         if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
           setLocation({ lat, lng, city: currentUser.city || "Position du profil", district: currentUser.city || "" });
+        } else if (currentUser.city || currentUser.address) {
+          const query = [currentUser.address, currentUser.city].filter(Boolean).join(", ");
+          api.get("/geocode/forward", { params:{ city:query } }).then(({data})=>setLocation({ lat:Number(data.lat), lng:Number(data.lng), city:currentUser.city||data.city, district:currentUser.address||data.district||currentUser.city })).catch(()=>{});
         }
         setView(currentUser.role === "client" ? "client" : "tech");
       })
@@ -1489,7 +1532,6 @@ export default function App() {
     if (loc && user) {
       try {
         const { data } = await api.patch(`/users/${user.id}`, {
-          city: loc.city,
           lat: loc.lat,
           lng: loc.lng,
         });
@@ -1512,7 +1554,7 @@ export default function App() {
       <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
       {view==="home"&&<Landing onSelect={selectRole}/>}
       {view==="auth"&&<AuthForm role={role} onBack={()=>setView("home")} onLogin={handleLogin}/>}
-      {view==="location"&&<LocationModal role={role} onDone={handleLocation}/>}
+      {view==="location"&&user&&<LocationModal role={role} user={user} onDone={handleLocation}/>}
       {view==="client"&&user&&<ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser}/>}
       {view==="tech"&&user&&<TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser}/>}
     </div>

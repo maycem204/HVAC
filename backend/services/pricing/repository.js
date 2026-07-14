@@ -7,6 +7,17 @@ function vectorLiteral(vector) {
   return `[${vector.join(",")}]`;
 }
 
+function comparable(value) {
+  const text = String(value || "");
+  const repaired = /[ÃÂ]/.test(text) ? Buffer.from(text, "latin1").toString("utf8") : text;
+  return repaired.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function matchingRow(result, field, expected) {
+  const target = comparable(expected);
+  return result.rows.find((row) => comparable(row[field]) === target);
+}
+
 class PricingRepository {
   constructor(pool) { this.pool = pool; }
 
@@ -38,14 +49,21 @@ class PricingRepository {
   async getFactors({ country, urgency, complexity, season, interventionType }) {
     const [region, urgencyRow, complexityRow, seasonRow, margin, serviceMinimum] = await Promise.all([
       this.pool.query("SELECT * FROM pricing_regions WHERE unaccent(lower(country)) = unaccent(lower($1)) AND active = true LIMIT 1", [country]),
-      this.pool.query("SELECT level, multiplier FROM pricing_urgency_multipliers WHERE unaccent(lower(level)) = unaccent(lower($1))", [urgency]),
-      this.pool.query("SELECT level, multiplier FROM pricing_complexity_multipliers WHERE unaccent(lower(level)) = unaccent(lower($1))", [complexity]),
-      this.pool.query("SELECT period, multiplier FROM pricing_season_multipliers WHERE unaccent(lower(period)) = unaccent(lower($1))", [season]),
+      this.pool.query("SELECT level, multiplier FROM pricing_urgency_multipliers"),
+      this.pool.query("SELECT level, multiplier FROM pricing_complexity_multipliers"),
+      this.pool.query("SELECT period, multiplier FROM pricing_season_multipliers"),
       this.pool.query("SELECT intervention_type, margin_usd FROM pricing_fixed_margins WHERE lower(intervention_type) = lower($1)", [interventionType]),
       this.pool.query("SELECT amount, currency_code, source FROM pricing_service_minimums WHERE unaccent(lower(country)) = unaccent(lower($1)) LIMIT 1", [country]),
     ]);
-    if (![region, urgencyRow, complexityRow, seasonRow, margin].every((item) => item.rows.length)) {
-      throw new Error("Missing pricing factor in PostgreSQL");
+    const urgencyFactor = matchingRow(urgencyRow, "level", urgency);
+    const complexityFactor = matchingRow(complexityRow, "level", complexity);
+    const seasonFactor = matchingRow(seasonRow, "period", season);
+    const required = { region: region.rows[0], urgency: urgencyFactor, complexity: complexityFactor, season: seasonFactor, margin: margin.rows[0] };
+    const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
+    if (missing.length) {
+      const error = new Error(`Missing pricing factor in PostgreSQL: ${missing.join(", ")}`);
+      error.code = "pricing_factor_missing";
+      throw error;
     }
     const regionData = region.rows[0];
     if (serviceMinimum.rows[0]?.currency_code === regionData.currency_code) {
@@ -53,8 +71,8 @@ class PricingRepository {
       regionData.minimum_service_source = serviceMinimum.rows[0].source;
     }
     return {
-      region: regionData, urgency: urgencyRow.rows[0], complexity: complexityRow.rows[0],
-      season: seasonRow.rows[0], margin: margin.rows[0],
+      region: regionData, urgency: urgencyFactor, complexity: complexityFactor,
+      season: seasonFactor, margin: margin.rows[0],
     };
   }
 

@@ -3,12 +3,14 @@ const { signToken, requireRole, verifyToken } = require("./middleware/auth");
 const http = require("http");
 const { Server } = require("socket.io");
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
 const multer = require("multer");
+const countryToCurrency = require("country-to-currency").default;
 const { rateLimit } = require("express-rate-limit");
 const { port, corsOrigins, geocodingBaseUrl, geocodingUserAgent } = require("./env");
-const { hashPassword, verifyPassword } = require("./utils/password");
+const { hashPassword, verifyPassword, validatePassword } = require("./utils/password");
 const { forwardGeocode, reverseGeocode } = require("./services/geocoding");
 const { parseTariffFile } = require("./services/tariff-file-parser");
 
@@ -52,6 +54,28 @@ const CITY_COORDS = {
   casablanca: { lat: 33.5731, lng: -7.5898, city: "Casablanca" },
 };
 
+function marketFromCity(city) {
+  const value = String(city || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/(alger|oran|constantine|annaba|setif|blida|dzair)/.test(value)) return { countryCode: "DZ", currency: "DZD" };
+  if (/(tunis|sfax|djerba|sousse|bizerte|gabes|kairouan|monastir)/.test(value)) return { countryCode: "TN", currency: "TND" };
+  if (/(casablanca|rabat|marrakech|fes|tanger|agadir|meknes|oujda)/.test(value)) return { countryCode: "MA", currency: "MAD" };
+  return null;
+}
+
+async function technicianMarket(technicianId) {
+  const result = await pool.query("SELECT city, country_code, currency FROM users WHERE id = $1", [technicianId]);
+  const user = result.rows[0] || {};
+  if (user.country_code && user.currency) return { countryCode: user.country_code, currency: user.currency };
+  let place = null;
+  try { place = await forwardGeocode(user.city, { baseUrl: geocodingBaseUrl, userAgent: geocodingUserAgent }); } catch {}
+  const market = place?.countryCode && countryToCurrency[place.countryCode]
+    ? { countryCode: place.countryCode, currency: countryToCurrency[place.countryCode] }
+    : marketFromCity(user.city);
+  if (!market) throw Object.assign(new Error("Ville introuvable. Précisez la ville et le pays dans votre profil, par exemple « Lyon, France »."), { status: 400 });
+  await pool.query("UPDATE users SET country_code=$1, currency=$2 WHERE id=$3", [market.countryCode, market.currency, technicianId]);
+  return market;
+}
+
 function haversineKm(aLat, aLng, bLat, bLng) {
   if ([aLat, aLng, bLat, bLng].some((n) => n == null || Number.isNaN(Number(n)))) return null;
   const toRad = (n) => Number(n) * Math.PI / 180;
@@ -64,6 +88,20 @@ function haversineKm(aLat, aLng, bLat, bLng) {
 }
 
 async function ensureSchedulingColumns() {
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country_code VARCHAR(2), ADD COLUMN IF NOT EXISTS currency VARCHAR(3)`);
+  await pool.query(`
+    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'EUR';
+    UPDATE appointments a SET currency=u.currency FROM users u
+    WHERE u.id=a.technician_id AND u.currency IS NOT NULL AND (a.currency IS NULL OR a.currency='EUR');
+  `);
+  await pool.query(`
+    ALTER TABLE price_items
+      ADD COLUMN IF NOT EXISTS country_code VARCHAR(2) NOT NULL DEFAULT 'DZ',
+      ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'DZD',
+      ADD COLUMN IF NOT EXISTS source_filename VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_price_items_country ON price_items(technician_id, country_code, category);
+  `);
   await pool.query(`
     ALTER TABLE leads
       ADD COLUMN IF NOT EXISTS requested_date DATE,
@@ -180,42 +218,49 @@ function minutesOf(value) {
   return h * 60 + m;
 }
 
+function timeRangesOverlap(startA, endA, startB, endB) {
+  const ranges = (start, end) => end > start ? [[start, end]] : [[start, 1440], [0, end]];
+  return ranges(startA, endA).some(([a1, a2]) => ranges(startB, endB).some(([b1, b2]) => a1 < b2 && b1 < a2));
+}
+
 async function isTechnicianAvailable(technicianId, date, time) {
   if (!date || !time) return { available: false, reason: "Choisissez une date et une heure." };
-
+  const requestedMinute = minutesOf(time);
   const booked = await pool.query(
-    `SELECT id FROM appointments
-     WHERE technician_id = $1
-       AND date = $2
-       AND time = $3
-       AND status IN ('pending', 'confirmed')
-     LIMIT 1`,
-    [technicianId, date, time]
+    `SELECT id, time, duration FROM appointments
+     WHERE technician_id = $1 AND date = $2 AND status IN ('pending', 'confirmed')`,
+    [technicianId, date]
   );
-  if (booked.rows.length > 0) {
-    return { available: false, reason: "Ce créneau est déjà réservé." };
-  }
+  const appointmentConflict = booked.rows.some((appointment) => {
+    const start = minutesOf(appointment.time);
+    const duration = Number.parseFloat(String(appointment.duration || "2h")) || 2;
+    return start != null && timeRangesOverlap(requestedMinute, requestedMinute + 120, start, start + duration * 60);
+  });
+  if (appointmentConflict) return { available: false, reason: "Ce créneau est déjà réservé." };
 
-  const blocks = await pool.query(
-    `SELECT * FROM blocked_slots WHERE technician_id = $1`,
-    [technicianId]
-  );
+  const blocks = await pool.query(`SELECT * FROM blocked_slots WHERE technician_id = $1`, [technicianId]);
   const requested = new Date(`${date}T00:00:00`);
   const dow = (requested.getDay() + 6) % 7;
-  const minute = minutesOf(time);
   const blocked = blocks.rows.some((slot) => {
-    const sameDate = slot.type === "specific" && String(slot.date).slice(0, 10) === date;
-    const weekly = slot.type === "weekly" && (slot.week_days || []).includes(dow);
-    const daily = slot.type === "daily";
-    if (!sameDate && !weekly && !daily) return false;
+    const applies = (slot.type === "specific" && String(slot.date).slice(0, 10) === date)
+      || (slot.type === "weekly" && (slot.week_days || []).includes(dow)) || slot.type === "daily";
+    if (!applies) return false;
     const start = minutesOf(slot.start_time);
     const end = minutesOf(slot.end_time);
-    return start == null || end == null || minute == null || (minute >= start && minute < end);
+    return start == null || end == null || requestedMinute == null || timeRangesOverlap(requestedMinute, requestedMinute + 120, start, end);
   });
+  return blocked ? { available: false, reason: "Le technicien est indisponible sur ce créneau." } : { available: true };
+}
 
-  return blocked
-    ? { available: false, reason: "Le technicien est indisponible sur ce créneau." }
-    : { available: true };
+function normalizedSpecialty(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function specialtyMatches(specializations, requested) {
+  const wanted = normalizedSpecialty(requested);
+  const groups = { climatisation: ["climatisation", "reparation", "refrigeration", "multi-split", "remplacement"], chauffage: ["chauffage", "pompe a chaleur", "maintenance preventive"], ventilation: ["ventilation", "installation"], installation: ["installation", "multi-split"] };
+  const expected = groups[wanted] || [wanted];
+  return (specializations || []).some((value) => expected.some((item) => normalizedSpecialty(value).includes(item)));
 }
 
 function sqlDate(value) {
@@ -228,6 +273,10 @@ function sqlDate(value) {
 app.get("/test", (req, res) => {
   res.json({ message: "Backend OK" });
 });
+app.get("/health", async (req, res) => {
+  try { await pool.query("SELECT 1"); res.json({ status: "ok" }); }
+  catch { res.status(503).json({ status: "unavailable" }); }
+});
 
 /* ===================== REGISTER ===================== */
 app.post("/register", authLimiter, async (req, res) => {
@@ -235,7 +284,8 @@ app.post("/register", authLimiter, async (req, res) => {
     const { name, email, password, role, city, phone, address } = req.body || {};
     if (typeof name !== "string" || name.trim().length < 2 || name.length > 100) return res.status(400).json({ error: "Nom invalide" });
     if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return res.status(400).json({ error: "Email invalide" });
-    if (typeof password !== "string" || password.length < 10 || password.length > 128) return res.status(400).json({ error: "Le mot de passe doit contenir entre 10 et 128 caractères" });
+    const passwordError = validatePassword(password, { name, email });
+    if (passwordError) return res.status(400).json({ error: passwordError });
     if (!['client', 'technician'].includes(role)) return res.status(400).json({ error: "Rôle invalide" });
 
     const hashedPassword = await hashPassword(password);
@@ -473,6 +523,13 @@ app.patch("/users/:id", auth, async (req, res) => {
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
     const { name, email, phone, address, city, lat, lng, avatar } = req.body;
+    let detected = null;
+    if (city) {
+      try {
+        const place = await forwardGeocode(city, { baseUrl: geocodingBaseUrl, userAgent: geocodingUserAgent });
+        if (place?.countryCode && countryToCurrency[place.countryCode]) detected = { ...place, currency: countryToCurrency[place.countryCode] };
+      } catch {}
+    }
     const result = await pool.query(
       `UPDATE users
        SET name = COALESCE($1, name),
@@ -482,10 +539,12 @@ app.patch("/users/:id", auth, async (req, res) => {
            city = COALESCE($5, city),
            lat = COALESCE($6, lat),
            lng = COALESCE($7, lng),
-           avatar = COALESCE($8, avatar)
-       WHERE id = $9
-       RETURNING id, name, email, phone, address, city, role, avatar, lat, lng`,
-      [name, email, phone, address, city, lat, lng, avatar, req.user.id]
+           avatar = COALESCE($8, avatar),
+           country_code = COALESCE($9, country_code),
+           currency = COALESCE($10, currency)
+       WHERE id = $11
+       RETURNING id, name, email, phone, address, city, role, avatar, lat, lng, country_code, currency`,
+      [name, email, phone, address, city, detected?.lat ?? lat, detected?.lng ?? lng, avatar, detected?.countryCode, detected?.currency, req.user.id]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -546,6 +605,40 @@ app.get("/appointments", auth, async (req, res) => {
   }
 });
 
+app.get("/availability/suggestions", auth, requireRole("client"), async (req, res) => {
+  try {
+    const specialty = String(req.query.specialty || "Climatisation");
+    const urgency = ["critical", "urgent", "normal"].includes(String(req.query.urgency)) ? String(req.query.urgency) : "normal";
+    const result = await pool.query(
+      `SELECT u.id, u.name, t.specializations, t.rating, t.reviews_count, t.response_time
+       FROM users u JOIN technician_profiles t ON t.user_id = u.id
+       WHERE u.role = 'technician' AND t.available = true`
+    );
+    const specialists = result.rows.filter((row) => specialtyMatches(row.specializations, specialty));
+    const generalists = result.rows.filter((row) => (row.specializations || []).some((value) => /reparation|maintenance|depannage|hvac/i.test(normalizedSpecialty(value))));
+    const candidates = specialists.length ? specialists : generalists;
+    const horizon = urgency === "critical" ? 2 : urgency === "urgent" ? 4 : 7;
+    const slots = [];
+    const now = new Date();
+    for (let offset = urgency === "normal" ? 1 : 0; offset <= horizon && slots.length < 5; offset += 1) {
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+      for (const hour of [8, 10, 12, 14, 16, 18]) {
+        if (offset === 0 && hour <= now.getHours() + 1) continue;
+        const time = `${String(hour).padStart(2, "0")}:00`;
+        for (const technician of candidates) {
+          if ((await isTechnicianAvailable(technician.id, date, time)).available) {
+            slots.push({ date, time, technician_id: technician.id, technician_name: technician.name, rating: technician.rating, reviews_count: technician.reviews_count, response_time: technician.response_time, urgency });
+            if (slots.length === 5) break;
+          }
+        }
+        if (slots.length === 5) break;
+      }
+    }
+    res.json({ specialty, urgency, matched_technicians: candidates.length, match_level: specialists.length ? "specialist" : "generalist", slots });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post("/appointments", auth, requireRole("client"), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -554,7 +647,7 @@ app.post("/appointments", auth, requireRole("client"), async (req, res) => {
       return res.status(400).json({ error: "Technicien, date ou heure invalide" });
     }
     const technician = await client.query(
-      "SELECT u.id, u.name FROM users u JOIN technician_profiles t ON t.user_id=u.id WHERE u.id=$1 AND u.role='technician' AND t.available=true",
+      "SELECT u.id, u.name, u.currency FROM users u JOIN technician_profiles t ON t.user_id=u.id WHERE u.id=$1 AND u.role='technician' AND t.available=true",
       [technicianId]
     );
     if (!technician.rows.length) return res.status(404).json({ error: "Technicien indisponible ou introuvable" });
@@ -564,10 +657,10 @@ app.post("/appointments", auth, requireRole("client"), async (req, res) => {
     const bookingAddress = address || clientProfile.rows[0]?.address || null;
     await client.query("BEGIN");
     const result = await client.query(
-      `INSERT INTO appointments (client_id, technician_id, date, time, service, fault_type, estimated_price, status, address, duration)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, '2h')
+      `INSERT INTO appointments (client_id, technician_id, date, time, service, fault_type, estimated_price, status, address, duration, currency)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, '2h', $9)
        RETURNING *`,
-      [req.user.id, technicianId, date, time, service, faultType, estimatedPrice || 0, bookingAddress]
+      [req.user.id, technicianId, date, time, service, faultType, estimatedPrice || 0, bookingAddress, String(req.body.currency || technician.rows[0].currency || "EUR").slice(0,3).toUpperCase()]
     );
     const lead = await client.query(
       `INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city, requested_date, requested_time, address, appointment_id)
@@ -664,6 +757,18 @@ app.post("/appointments/:id/feedback", auth, requireRole("client"), async (req, 
   } finally { client.release(); }
 });
 
+app.get("/technicians/:id/ratings", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT r.rating, r.comment, r.updated_at, u.name AS client_name
+       FROM technician_ratings r JOIN users u ON u.id=r.client_id
+       WHERE r.technician_id=$1 ORDER BY r.updated_at DESC LIMIT 50`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post("/technicians/:id/ratings", auth, requireRole("client"), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -751,11 +856,12 @@ app.get("/tarifs", auth, requireRole("technician"), async (req, res) => {
 app.post("/tarifs", auth, requireRole("technician"), async (req, res) => {
   try {
     const { service, unit, price, category } = req.body;
+    const market = await technicianMarket(req.user.id);
     const result = await pool.query(
-      `INSERT INTO price_items (technician_id, service, unit, price, category)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO price_items (technician_id, service, unit, price, category, country_code, currency)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user.id, service, unit || "", price, category || "Base"]
+      [req.user.id, service, unit || "", price, category || "Base", market.countryCode, market.currency]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -782,7 +888,7 @@ app.patch("/tarifs/:id", auth, requireRole("technician"), async (req, res) => {
   }
 });
 
-async function replaceTariffs(technicianId, items) {
+async function replaceTariffs(technicianId, items, context = {}) {
   const client = await pool.connect();
   try {
     if (!Array.isArray(items) || items.length === 0 || items.length > 1000
@@ -790,15 +896,23 @@ async function replaceTariffs(technicianId, items) {
       throw Object.assign(new Error("Grille tarifaire invalide"), { status: 400 });
     }
     await client.query("BEGIN");
-    await client.query(`DELETE FROM price_items WHERE technician_id = $1`, [technicianId]);
+    const countryAliases = { ALGERIE:"DZ", ALGERIA:"DZ", TUNISIE:"TN", TUNISIA:"TN", MAROC:"MA", MOROCCO:"MA" };
+    const normalizeCountry = (value) => {
+      const raw = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+      return countryAliases[raw] || raw;
+    };
+    const countryCode = normalizeCountry(context.countryCode || "DZ");
+    const currency = String(context.currency || ({ DZ:"DZD", TN:"TND", MA:"MAD" })[countryCode] || "EUR").toUpperCase();
+    if (!/^[A-Z]{2}$/.test(countryCode) || !/^[A-Z]{3}$/.test(currency)) throw Object.assign(new Error("Pays ou devise invalide"), { status: 400 });
+    await client.query(`DELETE FROM price_items WHERE technician_id = $1 AND country_code = $2`, [technicianId, countryCode]);
     for (const item of items) {
       await client.query(
-        `INSERT INTO price_items (technician_id, service, unit, price, category)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [technicianId, item.service, item.unit || "", item.price || 0, item.category || "Base"]
+        `INSERT INTO price_items (technician_id, service, unit, price, category, country_code, currency, source_filename, imported_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
+        [technicianId, item.service, item.unit || "", item.price || 0, item.category || "Base", countryCode, currency, context.filename || null]
       );
     }
-    const result = await client.query(`SELECT * FROM price_items WHERE technician_id = $1 ORDER BY category, id`, [technicianId]);
+    const result = await client.query(`SELECT * FROM price_items WHERE technician_id = $1 ORDER BY country_code, category, id`, [technicianId]);
     await client.query("COMMIT");
     return result.rows;
   } catch (err) {
@@ -810,15 +924,20 @@ async function replaceTariffs(technicianId, items) {
 }
 
 app.post("/tarifs/import", auth, requireRole("technician"), async (req, res, next) => {
-  try { res.json(await replaceTariffs(req.user.id, req.body?.items)); } catch (error) { next(error); }
+  try { res.json(await replaceTariffs(req.user.id, req.body?.items, await technicianMarket(req.user.id))); } catch (error) { next(error); }
+});
+
+app.get("/tarifs/context", auth, requireRole("technician"), async (req, res, next) => {
+  try { res.json(await technicianMarket(req.user.id)); } catch (error) { next(error); }
 });
 
 app.post("/tarifs/import-file", auth, requireRole("technician"), tariffUpload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Fichier manquant" });
     const items = await parseTariffFile(req.file);
-    const saved = await replaceTariffs(req.user.id, items);
-    res.json({ items: saved, imported_count: saved.length, filename: req.file.originalname });
+    const market = await technicianMarket(req.user.id);
+    const saved = await replaceTariffs(req.user.id, items, { ...market, filename: req.file.originalname });
+    res.json({ items: saved, imported_count: items.length, filename: req.file.originalname, country_code: market.countryCode, currency: market.currency });
   } catch (error) { next(error); }
 });
 
@@ -1002,6 +1121,11 @@ app.post("/leads/contact", auth, requireRole("client"), async (req, res) => {
   }
 });
 
+if (process.env.NODE_ENV === "production") {
+  const frontendDist = path.resolve(__dirname, "../frontend/dist");
+  app.use(express.static(frontendDist, { maxAge: "1d", index: false }));
+  app.get(/^(?!\/(?:api|conversations|appointments|technicians|notifications|leads|tarifs|blocked-slots|availability|auth|register|login|health|test)).*/, (req, res) => res.sendFile(path.join(frontendDist, "index.html")));
+}
 
 app.use((error, req, res, next) => {
   console.error(error);

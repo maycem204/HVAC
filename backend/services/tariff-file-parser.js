@@ -8,6 +8,8 @@ const HEADER_ALIASES = {
   unit: ["unite", "unite de mesure", "unite facturation", "unit"],
   price: ["prix", "tarif", "montant", "cout", "prix unitaire", "pu ht", "price", "cout base usd pieces"],
   category: ["categorie", "type", "famille", "category"],
+  currency: ["devise", "monnaie", "currency"],
+  country: ["pays", "country", "marche", "marché"],
 };
 
 function normalized(value) {
@@ -65,7 +67,9 @@ function itemFromValues(values, columns) {
   if (service.length < 2 || price == null) return null;
   const unit = columns.unit == null ? "" : cellText(values[columns.unit]).slice(0, 50);
   const categoryValue = columns.category == null ? "" : cellText(values[columns.category]);
-  return { service, unit, price, category: categoryValue.slice(0, 50) || inferCategory(service) };
+  const currency = columns.currency == null ? "" : cellText(values[columns.currency]).toUpperCase().slice(0, 3);
+  const country = columns.country == null ? "" : cellText(values[columns.country]).toUpperCase().slice(0, 30);
+  return { service, unit, price, category: categoryValue.slice(0, 50) || inferCategory(service), ...(currency ? { currency } : {}), ...(country ? { country } : {}) };
 }
 
 function deduplicate(items) {
@@ -130,7 +134,10 @@ function parsePdfText(text) {
     const service = match[1].replace(/[|;:.-]+$/, "").trim();
     const price = parsePrice(match[2]);
     if (service.length < 3 || price == null) continue;
-    items.push({ service: service.slice(0, 200), unit: "", price, category: inferCategory(service) });
+    const currencyMatch = line.match(/\b(DZD|TND|MAD|EUR|USD)\b|€|\bDA\b|\bDT\b|\bDH\b/i);
+    const symbol = String(currencyMatch?.[0] || "").toUpperCase();
+    const currency = ({ "€":"EUR", DA:"DZD", DT:"TND", DH:"MAD" })[symbol] || symbol;
+    items.push({ service: service.slice(0, 200), unit: "", price, category: inferCategory(service), ...(currency ? { currency } : {}) });
   }
   return deduplicate(items);
 }

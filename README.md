@@ -80,3 +80,14 @@ LLM_MODEL=deepseek-chat
 ```
 
 Pour OpenAI, utilisez une base terminant par `/v1`; pour Anthropic, `https://api.anthropic.com/v1`. Les anciennes variables `DEEPSEEK_*`, ainsi que les variables `OPENAI_*` et `ANTHROPIC_*`, restent disponibles comme valeurs de repli spécifiques au fournisseur.
+
+## Déploiement
+
+L'application dispose d'une image Docker multi-étapes : le frontend Vite est compilé puis servi par Express, avec Socket.IO sur le même domaine. Le point de contrôle est `GET /health`.
+
+1. Créer une base PostgreSQL avec l'extension pgvector et exécuter `npm run backend:db:init`.
+2. Définir au minimum `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `LLM_PROVIDER`, `LLM_API_KEY` et `EMBEDDING_BASE_URL`.
+3. Construire l'image avec `docker build -t quoteai-hvac .`.
+4. Lancer avec `docker run --env-file .env.production -p 5000:5000 quoteai-hvac`.
+
+Le fichier `render.yaml` permet également un déploiement Blueprint sur Render. Les secrets marqués `sync: false` doivent être renseignés dans le tableau de bord. Ne déployez jamais le fichier `.env` local.

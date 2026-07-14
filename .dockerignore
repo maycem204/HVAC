@@ -1,0 +1,10 @@
+.git
+.agents
+.codex
+.venv
+node_modules
+**/node_modules
+**/dist
+*.log
+.env
+HVAC_Pricing_Base_MENA*.xlsx

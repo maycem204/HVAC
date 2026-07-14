@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
   avatar VARCHAR(4),
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
+  country_code VARCHAR(2),
+  currency VARCHAR(3),
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -31,7 +33,11 @@ CREATE TABLE IF NOT EXISTS price_items (
   service VARCHAR(160) NOT NULL,
   unit VARCHAR(50),
   price NUMERIC(10,2) NOT NULL,
-  category VARCHAR(50)
+  category VARCHAR(50),
+  country_code VARCHAR(2) NOT NULL DEFAULT 'DZ',
+  currency VARCHAR(3) NOT NULL DEFAULT 'DZD',
+  source_filename VARCHAR(255),
+  imported_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS blocked_slots (
@@ -79,6 +85,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   service VARCHAR(160),
   fault_type VARCHAR(50),
   estimated_price NUMERIC(10,2),
+  currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
   actual_price NUMERIC(10,2),
   status VARCHAR(20) DEFAULT 'pending', -- pending, confirmed, completed, cancelled
   address TEXT,

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: quoteai-hvac
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: quoteai-postgres
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: LLM_PROVIDER
+        value: deepseek
+      - key: LLM_API_KEY
+        sync: false
+      - key: EMBEDDING_BASE_URL
+        sync: false
+databases:
+  - name: quoteai-postgres
+    plan: basic-256mb
+    databaseName: quoteai
+    user: quoteai

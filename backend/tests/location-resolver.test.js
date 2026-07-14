@@ -21,3 +21,7 @@ test("utilise ensuite la localisation instantanée puis le profil", () => {
   assert.equal(resolvePricingCountry({ text: "Ma clim est en panne", instantLocation: { city: "Djerba" }, profile: { city: "Alger" } }), "Tunisie");
   assert.equal(resolvePricingCountry({ text: "Ma clim est en panne", profile: { city: "Alger Centre" } }), "Algérie");
 });
+
+test("ignore des coordonnées de secours éloignées au lieu d'inventer un pays", () => {
+  assert.equal(resolvePricingCountry({ text:"Ma clim ne refroidit plus", instantLocation:{city:"Position",lat:0,lng:0}, profile:{city:"Tawrit Djerba",address:"Djerba, Tunisie"} }), "Tunisie");
+});
