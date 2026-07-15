@@ -22,7 +22,14 @@ const { setRealtimeServer, emitToUser } = require("./realtime");
 const app = express();
 
 app.disable("x-powered-by");
-app.use(helmet({ referrerPolicy: { policy: "strict-origin-when-cross-origin" } }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      imgSrc: ["'self'", "data:", "https://tile.openstreetmap.org"],
+    },
+  },
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+}));
 app.use(cors({
   origin: corsOrigins.length ? corsOrigins : false,
   credentials: true
