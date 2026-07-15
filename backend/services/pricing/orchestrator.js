@@ -216,6 +216,15 @@ class PricingOrchestrator {
       low_confidence: "Des cas similaires ont été trouvés, mais leur fiabilité est insuffisante. Un technicien doit confirmer le diagnostic.",
       judge_validation_failed: "Le devis automatique n’a pas passé les contrôles de cohérence. Un technicien doit le vérifier.",
     };
+    if (error) {
+      console.error("Pricing handoff after upstream failure", {
+        failureCode,
+        service: error.service || null,
+        code: error.code || error.name || null,
+        message: error.message || null,
+        cause: error.cause?.code || error.cause?.name || null,
+      });
+    }
     const entry = { clientId, requestText: text, extraction, confidence, failureCode, lastError: error?.code || error?.name || null };
     await Promise.allSettled([
       this.repository.saveAudit?.({ ...entry, decision: "human" }),
