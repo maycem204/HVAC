@@ -377,6 +377,11 @@ app.get("/technicians", auth, async (req, res) => {
         ) OR EXISTS (
           SELECT 1 FROM conversations c
           WHERE c.client_id = $1 AND c.technician_id = u.id
+            AND EXISTS (
+              SELECT 1 FROM appointments a
+              WHERE a.client_id = c.client_id AND a.technician_id = c.technician_id
+                AND a.status IN ('confirmed', 'completed')
+            )
         ) AS can_rate,
         (SELECT r.rating FROM technician_ratings r
          WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating
@@ -609,18 +614,25 @@ app.get("/availability/suggestions", auth, requireRole("client"), async (req, re
   try {
     const specialty = String(req.query.specialty || "Climatisation");
     const urgency = ["critical", "urgent", "normal"].includes(String(req.query.urgency)) ? String(req.query.urgency) : "normal";
+    const requester = await pool.query("SELECT lat, lng FROM users WHERE id = $1", [req.user.id]);
+    const clientLat = requester.rows[0]?.lat == null ? null : Number(requester.rows[0].lat);
+    const clientLng = requester.rows[0]?.lng == null ? null : Number(requester.rows[0].lng);
     const result = await pool.query(
-      `SELECT u.id, u.name, t.specializations, t.rating, t.reviews_count, t.response_time
+      `SELECT u.id, u.name, u.lat, u.lng, t.radius_km, t.specializations, t.rating, t.reviews_count, t.response_time
        FROM users u JOIN technician_profiles t ON t.user_id = u.id
        WHERE u.role = 'technician' AND t.available = true`
     );
-    const specialists = result.rows.filter((row) => specialtyMatches(row.specializations, specialty));
-    const generalists = result.rows.filter((row) => (row.specializations || []).some((value) => /reparation|maintenance|depannage|hvac/i.test(normalizedSpecialty(value))));
+    const nearby = result.rows.map((row) => ({
+      ...row,
+      distance_km: haversineKm(clientLat, clientLng, row.lat, row.lng),
+    })).filter((row) => row.distance_km == null || row.distance_km <= Number(row.radius_km || 10));
+    const specialists = nearby.filter((row) => specialtyMatches(row.specializations, specialty));
+    const generalists = nearby.filter((row) => (row.specializations || []).some((value) => /reparation|maintenance|depannage|hvac/i.test(normalizedSpecialty(value))));
     const candidates = specialists.length ? specialists : generalists;
     const horizon = urgency === "critical" ? 2 : urgency === "urgent" ? 4 : 7;
     const slots = [];
     const now = new Date();
-    for (let offset = urgency === "normal" ? 1 : 0; offset <= horizon && slots.length < 5; offset += 1) {
+    for (let offset = urgency === "normal" ? 1 : 0; offset <= horizon; offset += 1) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
       const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
       for (const hour of [8, 10, 12, 14, 16, 18]) {
@@ -628,11 +640,9 @@ app.get("/availability/suggestions", auth, requireRole("client"), async (req, re
         const time = `${String(hour).padStart(2, "0")}:00`;
         for (const technician of candidates) {
           if ((await isTechnicianAvailable(technician.id, date, time)).available) {
-            slots.push({ date, time, technician_id: technician.id, technician_name: technician.name, rating: technician.rating, reviews_count: technician.reviews_count, response_time: technician.response_time, urgency });
-            if (slots.length === 5) break;
+            slots.push({ date, time, technician_id: technician.id, technician_name: technician.name, distance_km: technician.distance_km == null ? null : Number(technician.distance_km.toFixed(1)), rating: technician.rating, reviews_count: technician.reviews_count, response_time: technician.response_time, urgency });
           }
         }
-        if (slots.length === 5) break;
       }
     }
     res.json({ specialty, urgency, matched_technicians: candidates.length, match_level: specialists.length ? "specialist" : "generalist", slots });
@@ -719,6 +729,14 @@ app.patch("/appointments/:id", auth, async (req, res) => {
       [fields.status, fields.actual_price, fields.case_description, fields.client_confirmed_price, req.params.id, req.user.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "Appointment not found" });
+    if (isTechnician && requestedStatus === "confirmed") {
+      await pool.query(
+        `INSERT INTO conversations (client_id, technician_id)
+         VALUES ($1, $2)
+         ON CONFLICT (client_id, technician_id) DO UPDATE SET updated_at = now()`,
+        [result.rows[0].client_id, result.rows[0].technician_id]
+      );
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

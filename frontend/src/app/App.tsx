@@ -673,7 +673,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
     setSlotsLoading(true); setSelectedSlot(null); setSlotsError("");
     try {
       const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency } });
-      setProposedSlots((data.slots || []).slice(0, 5).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
+      setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
     } catch (err) { console.error(err); setProposedSlots([]); setSlotsError("Impossible de consulter les agendas pour le moment. Réessayez dans quelques instants."); }
     finally { setSlotsLoading(false); }
   }
@@ -727,7 +727,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         currency: quote?.currency || "EUR",
       });
       onAppointmentCreated(mapAppointment(data));
-      onContact(tech.id); setBooked(true); setShowSlots(false);
+      setBooked(true); setShowSlots(false);
       setMessages((m)=>[...m,{role:"bot",text:`Demande envoyée ! ${selectedSlot.label} à ${selectedSlot.time} avec ${tech.name} (spécialiste ${faultType}). Le rendez-vous apparaîtra comme confirmé dès que le technicien l’acceptera.`}]);
     } catch (err) {
       console.error(err);
@@ -991,7 +991,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                     <div className="text-xs font-medium text-primary">{t.price}</div>
                     <div className="flex flex-wrap gap-1">{t.tags.map((tag)=><span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">{tag}</span>)}</div>
                     {aggregateReviews>0&&<div className="rounded-lg border border-gray-100 bg-white p-2 space-y-2"><div className="text-[11px] font-semibold text-muted-foreground">Avis clients récents</div>{(publicRatings[t.id]||[]).slice(0,3).map((review,index)=><div key={index} className="border-t border-gray-50 pt-2"><div className="flex items-center justify-between"><span className="text-xs font-medium">{review.client_name}</span><span className="text-xs text-amber-500">{"★".repeat(review.rating)}</span></div>{review.comment&&<p className="text-xs text-muted-foreground mt-0.5">{review.comment}</p>}</div>)}</div>}
-                    <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">Contacter ce technicien</button>
+                    {t.canRate
+                      ? <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">Ouvrir la discussion</button>
+                      : <div className="rounded-lg bg-blue-50 px-3 py-2 text-center text-[11px] text-blue-700">La discussion sera disponible après l’acceptation de votre créneau.</div>}
                     {ratingAllowed&&!isRating&&<button onClick={()=>{setRatingTech(t.id);setRatingDraft({rating:personalRating||0,comment:existing?.comment||""});}} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{personalRating?`Votre note : ${personalRating}/5 — modifier`:"Évaluer ce technicien"}</button>}
                     {!ratingAllowed&&<div className="text-[11px] text-muted-foreground text-center">Contactez ce technicien pour pouvoir l’évaluer.</div>}
                     {isRating&&ratingAllowed&&(

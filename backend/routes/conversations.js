@@ -13,10 +13,26 @@ const messageLimiter = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeade
 async function conversationForUser(id, userId) {
   const result = await pool.query(
     `SELECT c.* FROM conversations c
-     WHERE c.id = $1 AND (c.client_id = $2 OR c.technician_id = $2)`,
+     WHERE c.id = $1 AND (c.client_id = $2 OR c.technician_id = $2)
+       AND EXISTS (
+         SELECT 1 FROM appointments a
+         WHERE a.client_id = c.client_id AND a.technician_id = c.technician_id
+           AND a.status IN ('confirmed', 'completed')
+       )`,
     [id, userId]
   );
   return result.rows[0] || null;
+}
+
+async function hasAcceptedAppointment(clientId, technicianId) {
+  const result = await pool.query(
+    `SELECT 1 FROM appointments
+     WHERE client_id = $1 AND technician_id = $2
+       AND status IN ('confirmed', 'completed')
+     LIMIT 1`,
+    [clientId, technicianId]
+  );
+  return result.rows.length > 0;
 }
 
 function counterpartId(conversation, userId) {
@@ -32,6 +48,8 @@ router.get("/", auth, async (req, res, next) => {
               last_message.body AS last_message, last_message.created_at AS last_message_at,
               COALESCE(unread.count, 0)::int AS unread_count
        FROM conversations c
+       JOIN users client_user ON client_user.id = c.client_id AND client_user.role = 'client'
+       JOIN users technician_user ON technician_user.id = c.technician_id AND technician_user.role = 'technician'
        JOIN users other ON other.id = CASE WHEN c.client_id = $1 THEN c.technician_id ELSE c.client_id END
        LEFT JOIN LATERAL (
          SELECT body, created_at FROM conversation_messages
@@ -41,7 +59,12 @@ router.get("/", auth, async (req, res, next) => {
          SELECT COUNT(*) AS count FROM conversation_messages
          WHERE conversation_id = c.id AND sender_id <> $1 AND read_at IS NULL
        ) unread ON true
-       WHERE c.client_id = $1 OR c.technician_id = $1
+       WHERE (c.client_id = $1 OR c.technician_id = $1)
+         AND EXISTS (
+           SELECT 1 FROM appointments a
+           WHERE a.client_id = c.client_id AND a.technician_id = c.technician_id
+             AND a.status IN ('confirmed', 'completed')
+         )
        ORDER BY COALESCE(last_message.created_at, c.updated_at) DESC`,
       [req.user.id]
     );
@@ -60,6 +83,9 @@ router.post("/", auth, requireRole("client"), async (req, res, next) => {
       [technicianId]
     );
     if (!technician.rows.length) return res.status(404).json({ error: "Technicien introuvable" });
+    if (!(await hasAcceptedAppointment(req.user.id, technicianId))) {
+      return res.status(403).json({ error: "La messagerie sera disponible après l’acceptation du créneau par le technicien." });
+    }
     const result = await pool.query(
       `INSERT INTO conversations (client_id, technician_id)
        VALUES ($1, $2)
