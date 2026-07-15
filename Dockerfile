@@ -14,4 +14,4 @@ COPY backend/ ./backend/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD wget -qO- http://127.0.0.1:${PORT:-5000}/health || exit 1
-CMD ["sh", "-c", "npm --prefix backend run db:init && node backend/server.js"]
+CMD ["sh", "-c", "npm --prefix backend run db:init && (npm --prefix backend run pricing:embed || echo 'WARNING: initial pricing embedding failed; server will still start') && node backend/server.js"]
