@@ -2,7 +2,8 @@ services:
   - type: web
     name: quoteai-hvac
     runtime: docker
-    plan: starter
+    # Instance gratuite suffisante pour une demonstration client temporaire.
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -25,6 +26,7 @@ services:
         sync: false
 databases:
   - name: quoteai-postgres
-    plan: basic-256mb
+    # PostgreSQL gratuit : 1 Go, sans sauvegarde et expiration apres 30 jours.
+    plan: free
     databaseName: quoteai
     user: quoteai
