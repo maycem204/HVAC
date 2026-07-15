@@ -223,6 +223,7 @@ class PricingOrchestrator {
         code: error.code || error.name || null,
         message: error.message || null,
         cause: error.cause?.code || error.cause?.name || null,
+        causeMessage: error.cause?.message || null,
       });
     }
     const entry = { clientId, requestText: text, extraction, confidence, failureCode, lastError: error?.code || error?.name || null };

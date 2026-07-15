@@ -22,6 +22,8 @@ const { setRealtimeServer, emitToUser } = require("./realtime");
 const app = express();
 
 app.disable("x-powered-by");
+// Render termine HTTPS devant Express et transmet l'adresse client via un proxy unique.
+app.set("trust proxy", 1);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
