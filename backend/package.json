@@ -9,6 +9,7 @@
     "start": "node server.js",
     "test": "node --test tests/**/*.test.js",
     "test:scheduling": "node scripts/scheduling-smoke.js",
+    "pricing:import": "node scripts/import-pricing-xlsx.js \"../HVAC_Pricing_Base_MENA (1).xlsx\"",
     "pricing:embed": "node scripts/embed-pricing-catalog.js"
   },
   "keywords": [],

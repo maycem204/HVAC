@@ -135,7 +135,7 @@ class PricingOrchestrator {
   clarifyCoolingFailure(text, history) {
     const userText = [...history.filter((message)=>message?.role === "user").map((message)=>message.text || message.content || ""), text].join(" ").toLocaleLowerCase("fr");
     if (!/(ne refroidit (?:plus|pas)|air (?:pas )?froid|pas de froid)/i.test(userText)) return null;
-    const diagnosticDetail = /(air chaud|souffle (?:bien|faiblement|pas)|ventilateur|unit[eé] ext[eé]rieure|compresseur|givre|glace|fuit|fuite|bruit|odeur|code (?:erreur|[a-z0-9])|voyant|s['’]arr[eê]te|disjoncte|filtre|pression|gaz)/i.test(userText);
+    const diagnosticDetail = /(air chaud(?:e)?|souffle[^.]{0,30}(?:air )?chaud(?:e)?|souffle (?:bien|faiblement|pas)|ventilateur|unit[eé] ext[eé]rieure|compresseur|givre|glace|fuit|fuite|bruit|odeur|code (?:d['’]erreur )?[a-z0-9]+|voyant|s['’]arr[eê]te|disjoncte|filtre|pression|gaz)/i.test(userText);
     if (diagnosticDetail) return null;
     return {
       status: "clarification",
