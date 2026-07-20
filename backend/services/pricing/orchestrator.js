@@ -154,6 +154,10 @@ class PricingOrchestrator {
   }
 
   clarifyCoolingFailure(text, history) {
+    const current = String(text).toLocaleLowerCase("fr");
+    // Une nouvelle intervention formulée explicitement remplace le diagnostic
+    // précédent au lieu de rester bloquée sur la dernière question du bot.
+    if (/\b(?:installation|installer|pose|remplacement|remplacer|entretien|maintenance|nettoyage|recharge)\b/i.test(current)) return null;
     const userText = [...history.filter((message)=>message?.role === "user").map((message)=>message.text || message.content || ""), text].join(" ").toLocaleLowerCase("fr");
     if (!/(ne refroidit (?:plus|pas)|air (?:pas )?froid|pas de froid)/i.test(userText)) return null;
     const diagnosticDetail = /(air chaud(?:e)?|souffle[^.]{0,30}(?:air )?chaud(?:e)?|souffle (?:bien|faiblement|pas)|ventilateur|unit[eé] ext[eé]rieure|compresseur|givre|glace|fuit|fuite|bruit|odeur|code (?:d['’]erreur )?[a-z0-9]+|voyant|s['’]arr[eê]te|disjoncte|filtre|pression|gaz)/i.test(userText);
@@ -196,6 +200,21 @@ class PricingOrchestrator {
   }
 
   enrichKnownInterventions(extraction, text, history) {
+    const current = String(text || "").toLocaleLowerCase("fr");
+    if (/\b(?:installation|installer|pose)\b/i.test(current)
+      && /(?:clim|climatiseur|climatisation).*split.*(?:mural)?.*12\s*000\s*btu|12\s*000\s*btu.*(?:clim|split)/i.test(current)) {
+      extraction.faults = [{
+        code_hint: "CLI043",
+        description: "Installation climatiseur split mural 12000 BTU",
+        equipment_type: "climatiseur split mural 12000 BTU",
+        intervention_type: "Installation",
+        complexity: extraction.complexity || "Modérée",
+        complexity_reason: "Pose complète d’un climatiseur split mural avec raccordements.",
+      }];
+      extraction.clarification_needed = false;
+      extraction.clarification_question = null;
+      return;
+    }
     const conversation = this.conversationText(text, history);
     if (/remplacement\s+(?:du\s+|d['’]un\s+)?compresseur/i.test(conversation)
       && /(?:clim|climatiseur|climatisation|split)/i.test(conversation)) {

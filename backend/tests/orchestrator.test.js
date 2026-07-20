@@ -52,6 +52,20 @@ test("un simple manque de froid exige des observations avant tout devis", async 
   assert.equal(llmCalled,false);
 });
 
+test("une installation explicite remplace la clarification de panne précédente", async () => {
+  let llmCalled = false;
+  const orchestrator = new PricingOrchestrator({
+    repository: {}, embeddings: {},
+    llm: { async extract() { llmCalled = true; throw new Error("test stop"); } },
+  });
+  const result = await orchestrator.quote({
+    text: "Installation climatiseur split mural 12000 BTU",
+    history: [{ role:"user", text:"Ma clim ne refroidit plus" }, { role:"bot", text:"L’appareil souffle-t-il ?" }],
+  });
+  assert.equal(llmCalled, true);
+  assert.equal(result.status, "human_handoff");
+});
+
 test("la réponse air chaud poursuit le diagnostic sans retomber sur la clarification initiale", async () => {
   let llmCalled = false;
   const orchestrator = new PricingOrchestrator({
@@ -101,6 +115,15 @@ test("un remplacement explicite de compresseur split force le code catalogue CLR
   orchestrator.enrichKnownInterventions(extraction, "Remplacement compresseur climatiseur split urgent", []);
   assert.equal(extraction.faults[0].code_hint, "CLR007");
   assert.equal(extraction.faults[0].description, "Remplacement compresseur climatiseur split");
+});
+
+test("une installation explicite de split 12000 BTU force le code catalogue CLI043", () => {
+  const extraction = validExtraction();
+  const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: {} });
+  orchestrator.enrichKnownInterventions(extraction, "J'ai besoin d'une installation climatiseur split mural 12000 BTU", []);
+  assert.equal(extraction.faults.length, 1);
+  assert.equal(extraction.faults[0].code_hint, "CLI043");
+  assert.equal(extraction.faults[0].intervention_type, "Installation");
 });
 
 test("un rejet du rédacteur utilise un devis déterministe au lieu d'un transfert humain", async () => {
