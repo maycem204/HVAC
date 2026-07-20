@@ -13,12 +13,7 @@ const messageLimiter = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeade
 async function conversationForUser(id, userId) {
   const result = await pool.query(
     `SELECT c.* FROM conversations c
-     WHERE c.id = $1 AND (c.client_id = $2 OR c.technician_id = $2)
-       AND EXISTS (
-         SELECT 1 FROM appointments a
-         WHERE a.client_id = c.client_id AND a.technician_id = c.technician_id
-           AND a.status IN ('confirmed', 'completed')
-       )`,
+     WHERE c.id = $1 AND (c.client_id = $2 OR c.technician_id = $2)`,
     [id, userId]
   );
   return result.rows[0] || null;
@@ -60,11 +55,6 @@ router.get("/", auth, async (req, res, next) => {
          WHERE conversation_id = c.id AND sender_id <> $1 AND read_at IS NULL
        ) unread ON true
        WHERE (c.client_id = $1 OR c.technician_id = $1)
-         AND EXISTS (
-           SELECT 1 FROM appointments a
-           WHERE a.client_id = c.client_id AND a.technician_id = c.technician_id
-             AND a.status IN ('confirmed', 'completed')
-         )
        ORDER BY COALESCE(last_message.created_at, c.updated_at) DESC`,
       [req.user.id]
     );
@@ -110,9 +100,11 @@ router.get("/:id/messages", auth, async (req, res, next) => {
     const conversation = await conversationForUser(req.params.id, req.user.id);
     if (!conversation) return res.status(404).json({ error: "Conversation introuvable" });
     const result = await pool.query(
-      `SELECT m.id, m.conversation_id, m.sender_id, u.name AS sender_name, m.body, m.created_at, m.read_at
-       FROM conversation_messages m JOIN users u ON u.id = m.sender_id
-       WHERE m.conversation_id = $1 ORDER BY m.created_at ASC LIMIT 500`,
+      `SELECT * FROM (
+         SELECT m.id, m.conversation_id, m.sender_id, u.name AS sender_name, m.body, m.created_at, m.read_at
+         FROM conversation_messages m JOIN users u ON u.id = m.sender_id
+         WHERE m.conversation_id = $1 ORDER BY m.created_at DESC LIMIT 1000
+       ) recent ORDER BY created_at ASC`,
       [conversation.id]
     );
     await pool.query(

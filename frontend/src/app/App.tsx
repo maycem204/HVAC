@@ -41,7 +41,30 @@ const FAULT_SPECIALIZATION_MAP: Record<string, string[]> = {
 
 function Avatar({ initials, color, size = "md" }: { initials: string; color: string; size?: "sm" | "md" | "lg" }) {
   const sz = size === "sm" ? "w-8 h-8 text-xs" : size === "lg" ? "w-12 h-12 text-base" : "w-10 h-10 text-sm";
+  if (String(initials || "").startsWith("data:image/")) return <img src={initials} alt="Photo de profil" className={`${sz} rounded-full object-cover shrink-0 border border-white/40`}/>;
   return <div className={`${sz} ${color} rounded-full flex items-center justify-center text-white font-bold shrink-0`}>{initials}</div>;
+}
+
+function resizeProfileImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) return reject(new Error("Choisissez une image de moins de 5 Mo."));
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      const size = 256;
+      const canvas = document.createElement("canvas");
+      canvas.width = size; canvas.height = size;
+      const context = canvas.getContext("2d");
+      if (!context) { URL.revokeObjectURL(url); return reject(new Error("Image illisible.")); }
+      const scale = Math.max(size / image.width, size / image.height);
+      const width = image.width * scale; const height = image.height * scale;
+      context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image illisible.")); };
+    image.src = url;
+  });
 }
 
 function Badge({ children, color = "blue" }: { children: React.ReactNode; color?: "blue"|"green"|"amber"|"red"|"gray"|"purple" }) {
@@ -141,6 +164,7 @@ function ProfileModal({ user, role, onClose, onSave }:
   const [saving, setSaving] = useState(false);
   const [techSpec, setTechSpec] = useState<string[]>([]);
   const [radius, setRadius] = useState(10);
+  const [photoError, setPhotoError] = useState("");
   const isClient = role === "client";
 
   // Charge le profil technicien réel (spécialisations + rayon) depuis l'API
@@ -153,6 +177,13 @@ function ProfileModal({ user, role, onClose, onSave }:
   }, [isClient, user.id]);
 
   function toggleSpec(s: string) { setTechSpec((p)=>p.includes(s)?p.filter((x)=>x!==s):[...p,s]); }
+
+  async function selectPhoto(file?: File) {
+    if (!file) return;
+    setPhotoError("");
+    try { const avatar = await resizeProfileImage(file); setForm((previous) => ({ ...previous, avatar })); }
+    catch (error: any) { setPhotoError(error.message || "Photo invalide."); }
+  }
 
   async function save() {
     setSaving(true);
@@ -181,9 +212,10 @@ function ProfileModal({ user, role, onClose, onSave }:
         <div className="p-6 max-h-[85vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>Mon profil</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
           <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-xl">
-            <div className={`w-14 h-14 rounded-full ${isClient?"bg-blue-500":"bg-emerald-500"} flex items-center justify-center text-white text-xl font-bold`}>{form.name.split(" ").map((n)=>n[0]).join("").slice(0,2).toUpperCase()||"?"}</div>
+            <Avatar initials={form.avatar || form.name.split(" ").map((n)=>n[0]).join("").slice(0,2).toUpperCase() || "?"} color={isClient?"bg-blue-500":"bg-emerald-500"} size="lg"/>
             <div><div className="font-semibold text-foreground">{form.name||"Votre nom"}</div><Badge color={isClient?"blue":"green"}>{isClient?"Client":"Technicien"}</Badge></div>
           </div>
+          {!isClient&&<div className="mb-5"><label className="block text-xs font-medium mb-1.5">Photo de profil</label><label className="h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm inline-flex items-center gap-2 cursor-pointer hover:bg-gray-100"><Upload className="w-4 h-4"/>Choisir une photo<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>selectPhoto(event.target.files?.[0])}/></label>{photoError&&<div className="text-xs text-red-600 mt-1">{photoError}</div>}</div>}
           <div className="space-y-4">
             <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Informations personnelles</div>
             <div className="grid grid-cols-2 gap-3">{field("name","Nom complet","text","Votre nom")}{field("email","Email","email","votre@email.com")}{field("phone","Téléphone","tel","+213 6 xx xx xx")}{field("city","Ville","text","Alger")}</div>
@@ -348,7 +380,7 @@ function Landing({ onSelect }: { onSelect: (role: Role) => void }) {
 function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; onLogin: (u: AppUser, token: string) => void }) {
   const [mode, setMode] = useState<"login"|"register">("login");
   const [showPass, setShowPass] = useState(false);
-  const [form, setForm] = useState({ name:"", email:"", password:"" });
+  const [form, setForm] = useState({ name:"", email:"", password:"", city:"" });
   const [error, setError] = useState<string|null>(null);
   const [loading, setLoading] = useState(false);
   const isClient = role === "client";
@@ -364,7 +396,7 @@ function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; o
       const url = mode === "login" ? "/login" : "/register";
       const payload = mode === "login"
         ? { email: form.email, password: form.password, role }
-        : { name: form.name, email: form.email, password: form.password, role };
+        : { name: form.name, email: form.email, password: form.password, role, city: form.city };
       const { data } = await api.post(url, payload);
 
 
@@ -391,6 +423,7 @@ function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; o
           {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0"/>{error}</div>}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode==="register"&&<div><label className="block text-xs font-medium mb-1.5">Nom complet</label><input required value={form.name} onChange={(e)=>setForm((p)=>({...p,name:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>}
+            {mode==="register"&&!isClient&&<div><label className="block text-xs font-medium mb-1.5">Ville ou localisation du local professionnel</label><input required minLength={2} maxLength={120} placeholder="Ex : Tunis, Sfax, Alger…" value={form.city} onChange={(e)=>setForm((p)=>({...p,city:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><p className="mt-1.5 text-[11px] text-muted-foreground">Ce lieu sert à proposer vos services aux clients proches.</p></div>}
             <div><label className="block text-xs font-medium mb-1.5">Email</label><input type="email" required placeholder="votre@email.com" value={form.email} onChange={(e)=>setForm((p)=>({...p,email:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>
             <div><label className="block text-xs font-medium mb-1.5">Mot de passe</label><div className="relative"><input type={showPass?"text":"password"} required minLength={mode==="register"?8:1} maxLength={72} autoComplete={mode==="register"?"new-password":"current-password"} placeholder="8 caractères minimum" value={form.password} onChange={(e)=>setForm((p)=>({...p,password:e.target.value}))} className={`w-full h-11 px-4 pr-10 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPass?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button></div>{mode==="register"&&<p className="mt-1.5 text-[11px] text-muted-foreground">Évitez votre nom, votre e-mail et les mots de passe courants.</p>}</div>
             <button type="submit" disabled={loading} className={`w-full h-11 rounded-xl ${bg} text-white text-sm font-semibold mt-2 disabled:opacity-50`}>{loading?"Chargement…":mode==="login"?"Se connecter":"Créer mon compte"}</button>
@@ -463,7 +496,7 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
         <div className="flex items-center gap-3">
           {location&&<div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 text-blue-500"/>{location.city}</div>}
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
-          <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">{user.avatar}</div><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
+          <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-blue-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
         </div>
       </header>
@@ -920,7 +953,7 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
           <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">Ce mois</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">Revenus</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><div><div className="text-xs text-muted-foreground">Note moy.</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></div></div>
           {location&&<div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 text-emerald-500"/>{location.city}</div>}
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
-          <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-xs font-bold">{user.avatar}</div><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
+          <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-emerald-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
         </div>
       </header>

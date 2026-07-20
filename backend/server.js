@@ -36,7 +36,7 @@ app.use(cors({
   origin: corsOrigins.length ? corsOrigins : false,
   credentials: true
 }));
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "750kb" }));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
 const publicLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false });
 const geocodeLimiter = rateLimit({ windowMs: 1000, limit: 1, standardHeaders: "draft-8", legacyHeaders: false });
@@ -296,6 +296,9 @@ app.post("/register", authLimiter, async (req, res) => {
     const passwordError = validatePassword(password, { name, email });
     if (passwordError) return res.status(400).json({ error: passwordError });
     if (!['client', 'technician'].includes(role)) return res.status(400).json({ error: "Rôle invalide" });
+    if (role === "technician" && (typeof city !== "string" || city.trim().length < 2 || city.length > 120)) {
+      return res.status(400).json({ error: "La ville ou la localisation du local professionnel est obligatoire" });
+    }
 
     const hashedPassword = await hashPassword(password);
 
@@ -537,6 +540,10 @@ app.patch("/users/:id", auth, async (req, res) => {
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
     const { name, email, phone, address, city, lat, lng, avatar } = req.body;
+    if (avatar != null && (typeof avatar !== "string" || avatar.length > 500000
+      || (!/^data:image\/(?:jpeg|png|webp);base64,/i.test(avatar) && !/^[A-Za-zÀ-ÿ]{1,4}$/.test(avatar)))) {
+      return res.status(400).json({ error: "Photo de profil invalide ou trop volumineuse" });
+    }
     let detected = null;
     if (city) {
       try {

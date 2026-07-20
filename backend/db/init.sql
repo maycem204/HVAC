@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS price_items (
   imported_at TIMESTAMPTZ
 );
 
+ALTER TABLE users ALTER COLUMN avatar TYPE TEXT;
+
 CREATE TABLE IF NOT EXISTS blocked_slots (
   id SERIAL PRIMARY KEY,
   technician_id INT REFERENCES users(id) ON DELETE CASCADE,
