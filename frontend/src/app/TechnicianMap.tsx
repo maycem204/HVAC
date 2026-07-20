@@ -41,9 +41,13 @@ function MapViewport({ points, selected }: { points: Array<[number, number]>; se
 
 function technicianIcon(technician: MapTechnician, selected: boolean) {
   const background = technician.available ? "#10b981" : "#64748b";
+  const hasPhoto = technician.avatar?.startsWith("data:image/");
+  const content = hasPhoto
+    ? `<img src="${technician.avatar}" alt="" style="width:100%;height:100%;border-radius:9999px;object-fit:cover"/>`
+    : technician.avatar;
   return L.divIcon({
     className: "quoteai-map-marker",
-    html: `<div style="width:${selected ? 44 : 38}px;height:${selected ? 44 : 38}px;border-radius:9999px;background:${background};border:3px solid white;box-shadow:0 4px 14px rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:800">${technician.avatar}</div>`,
+    html: `<div style="width:${selected ? 44 : 38}px;height:${selected ? 44 : 38}px;border-radius:9999px;background:${background};border:3px solid white;box-shadow:0 4px 14px rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;color:white;font-size:12px;font-weight:800;overflow:hidden">${content}</div>`,
     iconSize: [selected ? 44 : 38, selected ? 44 : 38],
     iconAnchor: [selected ? 22 : 19, selected ? 22 : 19],
     popupAnchor: [0, -24],

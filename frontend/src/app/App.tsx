@@ -191,6 +191,7 @@ function ProfileModal({ user, role, onClose, onSave }:
 
   async function save() {
     setSaving(true);
+    setPhotoError("");
     try {
       const { data } = await api.patch(`/users/${user.id}`, form);
       if (!isClient) {
@@ -199,8 +200,9 @@ function ProfileModal({ user, role, onClose, onSave }:
       onSave(data);
       setSaved(true);
       setTimeout(() => { setSaved(false); onClose(); }, 1000);
-    } catch (err) {
+    } catch (err:any) {
       console.error(err);
+      setPhotoError(err.response?.data?.error || "Impossible d’enregistrer le profil.");
     } finally {
       setSaving(false);
     }
@@ -734,7 +736,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
                 return (
                   <button key={i} onClick={()=>setSelectedSlot(slot)} className={`w-full text-left p-3 rounded-xl border transition-all ${isSel?"border-primary bg-blue-50":"border-gray-200 hover:border-gray-300 bg-gray-50/50"}`}>
                     <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-full ${tech.color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{tech.avatar}</div>
+                      <Avatar initials={tech.avatar} color={tech.color} size="sm"/>
                       <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {readableDistance(slot.distanceKm)} · {tech.response}</div><div className="mt-1 flex items-center gap-1 text-xs"><Star className={`w-3.5 h-3.5 ${tech.reviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span>{tech.reviews>0?`${tech.rating}/5 (${tech.reviews} avis client${tech.reviews>1?"s":""})`:"Pas encore évalué"}</span></div></div>
                       {isSel&&<Check className="w-4 h-4 text-primary shrink-0"/>}
                     </div>

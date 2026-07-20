@@ -19,17 +19,6 @@ async function conversationForUser(id, userId) {
   return result.rows[0] || null;
 }
 
-async function hasAcceptedAppointment(clientId, technicianId) {
-  const result = await pool.query(
-    `SELECT 1 FROM appointments
-     WHERE client_id = $1 AND technician_id = $2
-       AND status IN ('confirmed', 'completed')
-     LIMIT 1`,
-    [clientId, technicianId]
-  );
-  return result.rows.length > 0;
-}
-
 function counterpartId(conversation, userId) {
   return Number(conversation.client_id) === Number(userId) ? conversation.technician_id : conversation.client_id;
 }
@@ -73,9 +62,6 @@ router.post("/", auth, requireRole("client"), async (req, res, next) => {
       [technicianId]
     );
     if (!technician.rows.length) return res.status(404).json({ error: "Technicien introuvable" });
-    if (!(await hasAcceptedAppointment(req.user.id, technicianId))) {
-      return res.status(403).json({ error: "La messagerie sera disponible après l’acceptation du créneau par le technicien." });
-    }
     const result = await pool.query(
       `INSERT INTO conversations (client_id, technician_id)
        VALUES ($1, $2)
