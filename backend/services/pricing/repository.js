@@ -169,7 +169,10 @@ class PricingRepository {
       const technicians = entry.assignTechnician ? await client.query(
         `SELECT u.id, u.name, u.lat, u.lng, t.specializations, t.radius_km, t.rating
          FROM users u JOIN technician_profiles t ON t.user_id=u.id
-         WHERE u.role='technician' AND t.available=true`
+         WHERE u.role='technician' AND t.available=true
+           AND NOT EXISTS (SELECT 1 FROM client_blocked_technicians b
+                           WHERE b.client_id=$1 AND b.technician_id=u.id)`,
+        [entry.clientId]
       ) : { rows: [] };
       const ranked = technicians.rows.map((technician) => {
         const distance = distanceKm(clientRow.lat, clientRow.lng, technician.lat, technician.lng);

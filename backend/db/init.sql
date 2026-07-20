@@ -145,6 +145,14 @@ CREATE TABLE IF NOT EXISTS technician_ratings (
 CREATE INDEX IF NOT EXISTS idx_technician_ratings_technician
   ON technician_ratings(technician_id);
 
+CREATE TABLE IF NOT EXISTS client_blocked_technicians (
+  client_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  technician_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (client_id, technician_id),
+  CHECK (client_id <> technician_id)
+);
+
 INSERT INTO technician_ratings(client_id, technician_id, rating, comment)
 SELECT DISTINCT ON (client_id, technician_id) client_id, technician_id, rating, feedback
 FROM appointments

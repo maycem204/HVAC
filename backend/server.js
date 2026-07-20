@@ -393,7 +393,9 @@ app.get("/technicians", auth, async (req, res) => {
         (SELECT r.rating FROM technician_ratings r
          WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating,
         (SELECT r.comment FROM technician_ratings r
-         WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating_comment
+         WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating_comment,
+        EXISTS (SELECT 1 FROM client_blocked_technicians b
+                WHERE b.client_id = $1 AND b.technician_id = u.id) AS is_blocked
       FROM users u
       JOIN technician_profiles t ON u.id = t.user_id
       WHERE u.role = 'technician'
@@ -582,6 +584,27 @@ app.get("/geocode/forward", auth, geocodeLimiter, async (req, res) => {
   }
 });
 
+app.post("/technicians/:id/block", auth, requireRole("client"), async (req, res) => {
+  try {
+    const technicianId = Number(req.params.id);
+    const technician = await pool.query("SELECT id FROM users WHERE id=$1 AND role='technician'", [technicianId]);
+    if (!technician.rows.length) return res.status(404).json({ error:"Technicien introuvable" });
+    await pool.query(
+      `INSERT INTO client_blocked_technicians (client_id, technician_id) VALUES ($1,$2)
+       ON CONFLICT (client_id, technician_id) DO NOTHING`,
+      [req.user.id, technicianId]
+    );
+    res.json({ blocked:true, technician_id:technicianId });
+  } catch (error) { res.status(500).json({ error:error.message }); }
+});
+
+app.delete("/technicians/:id/block", auth, requireRole("client"), async (req, res) => {
+  try {
+    await pool.query("DELETE FROM client_blocked_technicians WHERE client_id=$1 AND technician_id=$2", [req.user.id, req.params.id]);
+    res.json({ blocked:false, technician_id:Number(req.params.id) });
+  } catch (error) { res.status(500).json({ error:error.message }); }
+});
+
 app.get("/geocode/reverse", auth, geocodeLimiter, async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
@@ -639,7 +662,9 @@ app.get("/availability/suggestions", auth, requireRole("client"), async (req, re
     const result = await pool.query(
       `SELECT u.id, u.name, u.lat, u.lng, t.radius_km, t.specializations, t.rating, t.reviews_count, t.response_time
        FROM users u JOIN technician_profiles t ON t.user_id = u.id
-       WHERE u.role = 'technician' AND t.available = true`
+       WHERE u.role = 'technician' AND t.available = true
+         AND NOT EXISTS (SELECT 1 FROM client_blocked_technicians b WHERE b.client_id=$1 AND b.technician_id=u.id)`,
+      [req.user.id]
     );
     const nearby = result.rows.map((row) => ({
       ...row,
@@ -1089,36 +1114,79 @@ app.patch("/leads/:id", auth, requireRole("technician"), async (req, res) => {
 });
 
 app.post("/leads/:id/decline", auth, requireRole("technician"), async (req, res) => {
+  const db = await pool.connect();
   try {
-    const current = await pool.query(`SELECT * FROM leads WHERE id = $1 AND technician_id = $2`, [req.params.id, req.user.id]);
-    if (current.rows.length === 0) return res.status(404).json({ error: "Lead not found" });
-    await pool.query(`UPDATE leads SET status = 'done' WHERE id = $1`, [req.params.id]);
-
-    const lead = current.rows[0];
-    const candidates = await pool.query(
-      `SELECT u.id, u.name
-       FROM users u
-       JOIN technician_profiles t ON t.user_id = u.id
-       WHERE u.role = 'technician'
-         AND u.id <> $1
-         AND t.available = true
-         AND ($2::text IS NULL OR $2 = ANY(t.specializations))
-       LIMIT 1`,
-      [req.user.id, lead.fault_type || null]
+    await db.query("BEGIN");
+    const current = await db.query(
+      `SELECT l.*, a.date AS appointment_date, a.time AS appointment_time,
+              a.id AS linked_appointment_id, cu.name AS client_name, cu.lat AS client_lat, cu.lng AS client_lng
+       FROM leads l LEFT JOIN appointments a ON a.id=l.appointment_id
+       JOIN users cu ON cu.id=l.client_id
+       WHERE l.id=$1 AND l.technician_id=$2 FOR UPDATE OF l`,
+      [req.params.id, req.user.id]
     );
-    if (candidates.rows.length > 0) {
-      const tech = candidates.rows[0];
-      await pool.query(
-        `INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city)
-         VALUES ($1, $2, $3, $4, $5, $6, 'new', $7)`,
-        [lead.client_id, tech.id, lead.problem, lead.fault_type, lead.price, lead.confidence, lead.city]
-      );
-      return res.json({ reassignedTo: tech.name });
+    if (!current.rows.length) { await db.query("ROLLBACK"); return res.status(404).json({ error:"Lead introuvable" }); }
+    const lead = current.rows[0];
+    const result = await db.query(
+      `SELECT u.id,u.name,u.lat,u.lng,t.radius_km,t.specializations,t.rating
+       FROM users u JOIN technician_profiles t ON t.user_id=u.id
+       WHERE u.role='technician' AND t.available=true AND u.id<>$1
+         AND NOT EXISTS (SELECT 1 FROM client_blocked_technicians b WHERE b.client_id=$2 AND b.technician_id=u.id)`,
+      [req.user.id, lead.client_id]
+    );
+    const ranked = result.rows.map((technician)=>({
+      ...technician,
+      distance_km:haversineKm(lead.client_lat, lead.client_lng, technician.lat, technician.lng),
+      specialty_match:specialtyMatches(technician.specializations, lead.fault_type),
+    })).filter((technician)=>technician.distance_km == null || technician.distance_km <= Number(technician.radius_km || 10))
+      .sort((a,b)=>Number(b.specialty_match)-Number(a.specialty_match)
+        || (a.distance_km ?? Number.POSITIVE_INFINITY)-(b.distance_km ?? Number.POSITIVE_INFINITY)
+        || Number(b.rating||0)-Number(a.rating||0));
+    let replacement = null;
+    for (const technician of ranked) {
+      if (!lead.appointment_date || !lead.appointment_time
+        || (await isTechnicianAvailable(technician.id, sqlDate(lead.appointment_date), String(lead.appointment_time).slice(0,5))).available) {
+        replacement = technician; break;
+      }
     }
-    res.json({ reassignedTo: null });
+    if (!replacement) {
+      await db.query("UPDATE leads SET status='done' WHERE id=$1", [lead.id]);
+      const notice = await db.query(
+        `INSERT INTO notifications(user_id,type,title,message) VALUES($1,'reassign','Aucun remplaçant disponible',$2) RETURNING *`,
+        [lead.client_id, "Le technicien a refusé la demande et aucun autre professionnel compatible n’est libre sur le même créneau."]
+      );
+      await db.query("COMMIT");
+      emitToUser(lead.client_id,"notification:new",notice.rows[0]);
+      return res.json({ reassignedTo:null, clientNotified:true });
+    }
+    await db.query("UPDATE leads SET technician_id=$1,status='new' WHERE id=$2", [replacement.id,lead.id]);
+    let appointment = null;
+    if (lead.linked_appointment_id) {
+      const updated = await db.query("UPDATE appointments SET technician_id=$1,status='pending' WHERE id=$2 RETURNING *", [replacement.id,lead.linked_appointment_id]);
+      appointment = updated.rows[0];
+    }
+    const techNotice = await db.query(
+      `INSERT INTO notifications(user_id,type,title,message) VALUES($1,'lead','Nouvelle demande disponible',$2) RETURNING *`,
+      [replacement.id, `${lead.client_name} demande ${lead.problem}${lead.appointment_date ? ` le ${sqlDate(lead.appointment_date)} à ${String(lead.appointment_time).slice(0,5)}` : ""}.`]
+    );
+    const clientNotice = await db.query(
+      `INSERT INTO notifications(user_id,type,title,message) VALUES($1,'reassign','Nouveau technicien proposé',$2) RETURNING *`,
+      [lead.client_id, `${replacement.name} remplace le technicien initial pour votre demande${lead.appointment_date ? ` du ${sqlDate(lead.appointment_date)} à ${String(lead.appointment_time).slice(0,5)}` : ""}. Distance estimée : ${replacement.distance_km == null ? "indisponible" : `${replacement.distance_km.toFixed(1)} km`}.`]
+    );
+    await db.query("COMMIT");
+    const reassignedLead = { ...lead, technician_id:replacement.id, status:"new" };
+    emitToUser(replacement.id,"lead:new",reassignedLead);
+    emitToUser(replacement.id,"notification:new",techNotice.rows[0]);
+    emitToUser(lead.client_id,"notification:new",clientNotice.rows[0]);
+    if (appointment) {
+      emitToUser(replacement.id,"appointment:new",appointment);
+      emitToUser(lead.client_id,"appointment:updated",appointment);
+    }
+    res.json({ reassignedTo:replacement.name, distanceKm:replacement.distance_km, sameSlot:Boolean(lead.appointment_date), clientNotified:true });
   } catch (err) {
+    await db.query("ROLLBACK").catch(()=>{});
     res.status(500).json({ error: err.message });
-  }
+  } finally { db.release(); }
 });
 
 app.post("/chat/quote", auth, (req, res) => res.status(410).json({
