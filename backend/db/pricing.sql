@@ -96,6 +96,16 @@ ALTER TABLE pricing_fallback_requests
 
 ALTER TABLE pricing_regions ADD COLUMN IF NOT EXISTS minimum_service_price NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (minimum_service_price >= 0);
 
+-- Régions minimales requises avant les références de prix ayant une clé étrangère.
+-- L'import XLSX exécuté juste après complète et actualise les 26 régions MENA.
+INSERT INTO pricing_regions
+  (country, currency_name, currency_code, exchange_rate_per_usd, local_hourly_rate,
+   labour_adjustment, equipment_import_factor, source, active)
+VALUES
+  ('Tunisie','Dinar tunisien','TND',3.1,35,1,1.1,'Base HVAC MENA',true),
+  ('Algérie','Dinar algérien','DZD',134,850,0.9,1.15,'Base HVAC MENA',true)
+ON CONFLICT (country) DO NOTHING;
+
 -- Petite maintenance calibrée séparément d'un remplacement de pièce.
 INSERT INTO pricing_faults(code, category, subcategory, name, intervention_type, base_parts_cost_usd, estimated_hours, notes)
 VALUES ('MNT172','Maintenance','Entretien préventif','Nettoyage filtre lavable climatiseur split','Reparation',0,0.35,'Filtre réutilisable : dépose, nettoyage, séchage et repose. Hors remplacement.')

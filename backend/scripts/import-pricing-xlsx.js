@@ -10,12 +10,40 @@ async function main() {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(workbookPath);
   const sheet = workbook.getWorksheet("Types_Pannes_Installations");
+  const regionsSheet = workbook.getWorksheet("Donnees_Regionales_MENA");
   if (!sheet) throw new Error("Missing worksheet: Types_Pannes_Installations");
+  if (!regionsSheet) throw new Error("Missing worksheet: Donnees_Regionales_MENA");
 
   const client = await pool.connect();
   let imported = 0;
+  let importedRegions = 0;
   try {
     await client.query("BEGIN");
+    for (let rowNumber = 2; rowNumber <= regionsSheet.rowCount; rowNumber += 1) {
+      const row = regionsSheet.getRow(rowNumber);
+      const [country, currencyName, currencyCode, exchangeRate, hourlyRate, labourAdjustment, importFactor, source] = row.values.slice(1);
+      if (!country || !currencyCode || !exchangeRate) continue;
+      await client.query(
+        `INSERT INTO pricing_regions
+          (country, currency_name, currency_code, exchange_rate_per_usd, local_hourly_rate,
+           labour_adjustment, equipment_import_factor, source, active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true)
+         ON CONFLICT (country) DO UPDATE SET
+           currency_name=EXCLUDED.currency_name,
+           currency_code=EXCLUDED.currency_code,
+           exchange_rate_per_usd=EXCLUDED.exchange_rate_per_usd,
+           local_hourly_rate=EXCLUDED.local_hourly_rate,
+           labour_adjustment=EXCLUDED.labour_adjustment,
+           equipment_import_factor=EXCLUDED.equipment_import_factor,
+           source=EXCLUDED.source,
+           active=true,
+           updated_at=now()`,
+        [String(country).trim(), String(currencyName || currencyCode).trim(), String(currencyCode).trim(),
+          Number(exchangeRate), Number(hourlyRate || 0), Number(labourAdjustment || 1),
+          Number(importFactor || 1), source || null]
+      );
+      importedRegions += 1;
+    }
     for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const row = sheet.getRow(rowNumber);
       const [code, category, subcategory, name, interventionType, partsCost, hours, notes] = row.values.slice(1);
@@ -49,7 +77,7 @@ async function main() {
       imported += 1;
     }
     await client.query("COMMIT");
-    console.log(`Imported ${imported} pricing interventions from ${path.basename(workbookPath)}`);
+    console.log(`Imported ${imported} pricing interventions and ${importedRegions} regions from ${path.basename(workbookPath)}`);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
