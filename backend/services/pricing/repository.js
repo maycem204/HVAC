@@ -27,6 +27,33 @@ function matchingRow(result, field, expected) {
   });
 }
 
+function distanceKm(lat1, lng1, lat2, lng2) {
+  if (![lat1, lng1, lat2, lng2].every((value) => Number.isFinite(Number(value)))) return null;
+  const toRad = (value) => Number(value) * Math.PI / 180;
+  const dLat = toRad(Number(lat2) - Number(lat1));
+  const dLng = toRad(Number(lng2) - Number(lng1));
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function technicianRelevance(specializations, extraction, requestText) {
+  const requested = comparable([requestText, ...(extraction?.faults || []).flatMap((fault) => [fault.description, fault.equipment_type, fault.intervention_type])].join(" "));
+  const groups = [];
+  if (/clim|split|compresseur|froid|refriger/.test(requested)) groups.push("climatisation", "refrigeration", "multi split");
+  if (/chauff|chaudiere|pompe a chaleur/.test(requested)) groups.push("chauffage", "pompe a chaleur");
+  if (/ventil/.test(requested)) groups.push("ventilation");
+  if (/install|pose/.test(requested)) groups.push("installation");
+  if (/remplac/.test(requested)) groups.push("remplacement");
+  if (/repar|panne|diagnostic|code/.test(requested)) groups.push("reparation", "depannage", "maintenance");
+  return (specializations || []).reduce((score, specialization) => {
+    const normalized = comparable(specialization);
+    const direct = requested.includes(normalized) ? 4 : 0;
+    const related = groups.some((group) => normalized.includes(group) || group.includes(normalized)) ? 3 : 0;
+    const generic = /hvac|reparation|maintenance|depannage/.test(normalized) ? 1 : 0;
+    return score + Math.max(direct, related, generic);
+  }, 0);
+}
+
 class PricingRepository {
   constructor(pool) { this.pool = pool; }
 
@@ -132,14 +159,63 @@ class PricingRepository {
   }
 
   async queueFallback(entry) {
-    await this.pool.query(
-      `INSERT INTO pricing_fallback_requests
-       (client_id, request_text, extraction, failure_code, confidence, last_error)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [entry.clientId || null, entry.requestText, entry.extraction || null, entry.failureCode,
-        entry.confidence ?? null, entry.lastError || null]
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const clientResult = entry.clientId
+        ? await client.query("SELECT id, name, city, lat, lng FROM users WHERE id=$1", [entry.clientId])
+        : { rows: [] };
+      const clientRow = clientResult.rows[0] || {};
+      const technicians = await client.query(
+        `SELECT u.id, u.name, u.lat, u.lng, t.specializations, t.radius_km, t.rating
+         FROM users u JOIN technician_profiles t ON t.user_id=u.id
+         WHERE u.role='technician' AND t.available=true`
+      );
+      const ranked = technicians.rows.map((technician) => {
+        const distance = distanceKm(clientRow.lat, clientRow.lng, technician.lat, technician.lng);
+        return { ...technician, distance, relevance: technicianRelevance(technician.specializations, entry.extraction, entry.requestText) };
+      }).filter((technician) => technician.distance == null || technician.distance <= Number(technician.radius_km || 10))
+        .sort((a, b) => b.relevance - a.relevance
+          || (a.distance ?? Number.MAX_SAFE_INTEGER) - (b.distance ?? Number.MAX_SAFE_INTEGER)
+          || Number(b.rating || 0) - Number(a.rating || 0));
+      const assigned = ranked.find((technician) => technician.relevance > 0) || ranked[0] || null;
+      const reason = assigned
+        ? `specialty_score=${assigned.relevance};distance_km=${assigned.distance == null ? "unknown" : assigned.distance.toFixed(1)};rating=${Number(assigned.rating || 0)}`
+        : null;
+      const fallback = await client.query(
+        `INSERT INTO pricing_fallback_requests
+         (client_id, request_text, extraction, failure_code, confidence, last_error,
+          assigned_technician_id, assignment_reason, assigned_at, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $7::int IS NULL THEN NULL ELSE now() END,
+                 CASE WHEN $7::int IS NULL THEN 'pending' ELSE 'assigned' END)
+         RETURNING id`,
+        [entry.clientId || null, entry.requestText, entry.extraction || null, entry.failureCode,
+          entry.confidence ?? null, entry.lastError || null, assigned?.id || null, reason]
+      );
+      if (assigned && entry.clientId) {
+        const firstFault = entry.extraction?.faults?.[0] || {};
+        await client.query(
+          `INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city)
+           VALUES ($1,$2,$3,$4,0,$5,'new',$6)`,
+          [entry.clientId, assigned.id, entry.requestText,
+            String(firstFault.equipment_type || firstFault.intervention_type || "HVAC").slice(0, 50),
+            Math.round(Number(entry.confidence || 0) * 100), clientRow.city || null]
+        );
+        await client.query(
+          `INSERT INTO notifications (user_id, type, title, message)
+           VALUES ($1,'lead','Diagnostic humain requis',$2)`,
+          [assigned.id, `${clientRow.name || "Un client"} : ${String(entry.requestText).slice(0, 220)}`]
+        );
+      }
+      await client.query("COMMIT");
+      return { fallbackId: fallback.rows[0].id, assignment: assigned ? { technicianId: assigned.id, technicianName: assigned.name, distanceKm: assigned.distance } : null };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 
-module.exports = { PricingRepository, vectorLiteral };
+module.exports = { PricingRepository, vectorLiteral, technicianRelevance };

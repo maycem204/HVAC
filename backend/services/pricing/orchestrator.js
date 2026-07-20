@@ -76,7 +76,13 @@ class PricingOrchestrator {
         interventionTypeMatch: best.intervention_type === fault.intervention_type,
         equipmentTypeMatch: this.equipmentMatches(best, fault),
       });
-      matches.push({ fault: best, confidence: faultConfidence(best.semantic_score, structural), retrieval });
+      matches.push({
+        fault: best,
+        requestedComplexity: fault.complexity || extraction.complexity,
+        complexityReason: fault.complexity_reason || null,
+        confidence: faultConfidence(best.semantic_score, structural),
+        retrieval,
+      });
     }
     const confidence = caseConfidence(matches.map((match) => match.confidence));
     const thresholds = await this.repository.getThresholds();
@@ -85,8 +91,8 @@ class PricingOrchestrator {
 
     let factorSets;
     try {
-      factorSets = await Promise.all(matches.map(({ fault }) => this.repository.getFactors({
-        country: extraction.country, urgency: extraction.urgency, complexity: extraction.complexity,
+      factorSets = await Promise.all(matches.map(({ fault, requestedComplexity }) => this.repository.getFactors({
+        country: extraction.country, urgency: extraction.urgency, complexity: requestedComplexity,
         season: extraction.season, interventionType: fault.intervention_type,
       })));
     } catch (error) {
@@ -240,17 +246,22 @@ class PricingOrchestrator {
       });
     }
     const entry = { clientId, requestText: text, extraction, confidence, failureCode, lastError: error?.code || error?.name || null };
-    await Promise.allSettled([
+    const [, queued] = await Promise.allSettled([
       this.repository.saveAudit?.({ ...entry, decision: "human" }),
       this.repository.queueFallback?.(entry),
     ]);
+    const assignment = queued?.status === "fulfilled" ? queued.value?.assignment || null : null;
+    const baseMessage = messages[failureCode] || "Votre cas nécessite l’avis d’un technicien. Votre demande a été enregistrée.";
     return {
       status: "human_handoff",
       failure_code: failureCode,
       retryable: ["llm_unavailable", "llm_unavailable_after_calculation", "embedding_unavailable", "vector_search_unavailable"].includes(failureCode),
-      message: messages[failureCode] || "Votre cas nécessite l’avis d’un technicien. Votre demande a été enregistrée.",
+      message: assignment
+        ? `${baseMessage} Elle a été transmise à ${assignment.technicianName}, technicien disponible correspondant à cette panne.`
+        : baseMessage,
       extraction,
       confidence,
+      assignment,
     };
   }
 }

@@ -89,6 +89,11 @@ CREATE INDEX IF NOT EXISTS idx_pricing_history_embedding ON pricing_historical_c
 CREATE INDEX IF NOT EXISTS idx_pricing_audits_created ON pricing_quote_audits(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pricing_fallback_pending ON pricing_fallback_requests(status, created_at) WHERE status = 'pending';
 
+ALTER TABLE pricing_fallback_requests
+  ADD COLUMN IF NOT EXISTS assigned_technician_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS assignment_reason TEXT,
+  ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+
 ALTER TABLE pricing_regions ADD COLUMN IF NOT EXISTS minimum_service_price NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (minimum_service_price >= 0);
 
 -- Petite maintenance calibrée séparément d'un remplacement de pièce.
