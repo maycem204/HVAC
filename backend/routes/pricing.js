@@ -45,8 +45,9 @@ router.post("/quote", auth, quoteLimiter, async (req, res, next) => {
       return res.status(400).json({ error: "Coordonnées invalides." });
     }
     const user = await pool.query("SELECT city, address, country_code, lat, lng FROM users WHERE id = $1", [req.user.id]);
+    const conversationText = [...(body.history || []).filter((message) => message.role === "user").map((message) => message.text), text].join(" ");
     const clientCountry = resolvePricingCountry({
-      text,
+      text: conversationText,
       explicitCountry: body.country,
       instantLocation: body.location,
       profile: user.rows[0],

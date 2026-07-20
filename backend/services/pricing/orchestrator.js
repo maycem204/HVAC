@@ -38,6 +38,13 @@ class PricingOrchestrator {
       }
       return { status: "clarification", question: extraction.clarification_question, extraction };
     }
+    if (!String(extraction.country || "").trim()) {
+      return {
+        status: "clarification",
+        question: "Dans quel pays se trouve l’appareil ? Cette information est nécessaire pour appliquer la devise et le barème local.",
+        extraction: { ...extraction, clarification_needed: true, reason: "country_missing" },
+      };
+    }
     this.validateExtraction(extraction);
 
     const matches = [];

@@ -27,12 +27,20 @@ const REFERENCE_POINTS = [
   [23.588, 58.3829, "Oman"], [31.9539, 35.9106, "Jordanie"], [33.8938, 35.5018, "Liban"], [33.3152, 44.3661, "Irak"],
 ];
 
+const COUNTRY_CODE_ALIASES = {
+  TN: "Tunisie", DZ: "Algérie", MA: "Maroc", LY: "Libye", EG: "Égypte",
+  SA: "Arabie Saoudite", AE: "Émirats Arabes Unis", QA: "Qatar", KW: "Koweït",
+  BH: "Bahreïn", OM: "Oman", JO: "Jordanie", LB: "Liban", IQ: "Irak",
+};
+
 function normalize(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
 }
 
 function countryFromText(value) {
+  const countryCode = String(value || "").trim().toUpperCase();
+  if (COUNTRY_CODE_ALIASES[countryCode]) return COUNTRY_CODE_ALIASES[countryCode];
   const text = ` ${normalize(value)} `;
   if (text.trim().length === 0) return null;
   for (const [country, aliases] of Object.entries(PLACE_ALIASES)) {
@@ -65,6 +73,7 @@ function resolvePricingCountry({ text, explicitCountry, instantLocation, profile
     || countryFromText(explicitCountry)
     || countryFromText(instantLocation?.city)
     || countryFromCoordinates(instantLocation?.lat, instantLocation?.lng)
+    || countryFromText(profile?.country_code)
     || countryFromText(profile?.city)
     || countryFromText(profile?.address)
     || countryFromCoordinates(profile?.lat, profile?.lng)
