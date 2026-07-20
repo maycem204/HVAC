@@ -6,6 +6,7 @@
     "db:init": "node db/init.js",
     "db:seed": "node db/seed.js",
     "db:demo-technicians": "node db/demo-technicians.js",
+    "db:demo-clients": "node db/demo-clients.js",
     "dev": "nodemon server.js",
     "start": "node server.js",
     "test": "node --test tests/**/*.test.js",
