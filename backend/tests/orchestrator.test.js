@@ -95,6 +95,14 @@ test("un devis filtre sale utilise le code catalogue précis", async () => {
   assert.match(extraction.faults[0].description, /filtre lavable/i);
 });
 
+test("un remplacement explicite de compresseur split force le code catalogue CLR007", () => {
+  const extraction = validExtraction();
+  const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: {} });
+  orchestrator.enrichKnownInterventions(extraction, "Remplacement compresseur climatiseur split urgent", []);
+  assert.equal(extraction.faults[0].code_hint, "CLR007");
+  assert.equal(extraction.faults[0].description, "Remplacement compresseur climatiseur split");
+});
+
 test("un rejet du rédacteur utilise un devis déterministe au lieu d'un transfert humain", async () => {
   const repository = fallbackRepository({
     async findCandidates() {

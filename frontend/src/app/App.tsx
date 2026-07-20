@@ -423,7 +423,7 @@ function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; o
           {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0"/>{error}</div>}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode==="register"&&<div><label className="block text-xs font-medium mb-1.5">Nom complet</label><input required value={form.name} onChange={(e)=>setForm((p)=>({...p,name:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>}
-            {mode==="register"&&!isClient&&<div><label className="block text-xs font-medium mb-1.5">Ville ou localisation du local professionnel</label><input required minLength={2} maxLength={120} placeholder="Ex : Tunis, Sfax, Alger…" value={form.city} onChange={(e)=>setForm((p)=>({...p,city:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><p className="mt-1.5 text-[11px] text-muted-foreground">Ce lieu sert à proposer vos services aux clients proches.</p></div>}
+            {mode==="register"&&<div className={!isClient?"p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50/50":""}><label className="block text-xs font-semibold mb-1.5">{isClient?"Ville":"Ville ou localisation du local professionnel *"}</label><input required={!isClient} minLength={2} maxLength={120} autoComplete="address-level2" placeholder="Ex : Houmt Souk, Djerba, Zarzis, Alger…" value={form.city} onChange={(e)=>setForm((p)=>({...p,city:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none ${focus}`}/>{!isClient&&<p className="mt-1.5 text-[11px] text-emerald-800">Champ obligatoire — indiquez la ville où vous travaillez ou l’emplacement de votre local.</p>}</div>}
             <div><label className="block text-xs font-medium mb-1.5">Email</label><input type="email" required placeholder="votre@email.com" value={form.email} onChange={(e)=>setForm((p)=>({...p,email:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>
             <div><label className="block text-xs font-medium mb-1.5">Mot de passe</label><div className="relative"><input type={showPass?"text":"password"} required minLength={mode==="register"?8:1} maxLength={72} autoComplete={mode==="register"?"new-password":"current-password"} placeholder="8 caractères minimum" value={form.password} onChange={(e)=>setForm((p)=>({...p,password:e.target.value}))} className={`w-full h-11 px-4 pr-10 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPass?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button></div>{mode==="register"&&<p className="mt-1.5 text-[11px] text-muted-foreground">Évitez votre nom, votre e-mail et les mots de passe courants.</p>}</div>
             <button type="submit" disabled={loading} className={`w-full h-11 rounded-xl ${bg} text-white text-sm font-semibold mt-2 disabled:opacity-50`}>{loading?"Chargement…":mode==="login"?"Se connecter":"Créer mon compte"}</button>
@@ -553,7 +553,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro." }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number; currency:string; subtotal:number; minimumAdjustment:number }|null>(null);
+  const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number; currency:string; subtotal:number; minimumAdjustment:number; extraction:any; lines:any[]; matches:any[] }|null>(null);
   const [priceDecision, setPriceDecision] = useState<PriceDecision>(null);
   const [showSlots, setShowSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<SuggestedSlot|null>(null);
@@ -599,7 +599,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         setScheduleRequest({ date: /^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule.date || "")) ? llmSchedule.date : directSchedule?.date || null, period: ["morning","afternoon","evening"].includes(llmSchedule.period) ? llmSchedule.period : directSchedule?.period || "any" });
       }
       if (data.status === "quote") {
-        setQuote({ price: data.calculation.total, low: data.calculation.range.min, high: data.calculation.range.max, conf: Math.round(data.confidence * 100), currency: data.calculation.currency, subtotal: data.calculation.subtotal ?? data.calculation.total, minimumAdjustment: data.calculation.service_minimum_adjustment ?? 0 });
+        setQuote({ price: data.calculation.total, low: data.calculation.range.min, high: data.calculation.range.max, conf: Math.round(data.confidence * 100), currency: data.calculation.currency, subtotal: data.calculation.subtotal ?? data.calculation.total, minimumAdjustment: data.calculation.service_minimum_adjustment ?? 0, extraction: data.extraction || {}, lines: data.calculation.lines || [], matches: data.matches || [] });
       }
       const reply = data.question || data.message;
       setMessages((m)=>[...m,{role:"bot",text:reply || "Pouvez-vous préciser votre problème HVAC ?"}]);
@@ -681,6 +681,31 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
               </div>
               {quote.minimumAdjustment > 0 && <div className="mt-2 text-xs opacity-80">Minimum local de déplacement et d’intervention inclus.</div>}
             </div>
+            <details open className="border-t border-gray-100 bg-slate-50/70">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">Vérifier l’analyse et le calcul</summary>
+              <div className="px-4 pb-4 space-y-3 text-xs text-slate-700">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><span className="text-slate-500">Pays :</span> {quote.extraction.country || "Non déterminé"}</div>
+                  <div><span className="text-slate-500">Urgence :</span> {quote.extraction.urgency || "Non déterminée"}</div>
+                  <div><span className="text-slate-500">Complexité :</span> {quote.extraction.complexity || "Non déterminée"}</div>
+                  <div><span className="text-slate-500">Saison :</span> {quote.extraction.season || "Non déterminée"}</div>
+                  <div><span className="text-slate-500">Marque :</span> {quote.extraction.brand || "Non indiquée"}</div>
+                  <div><span className="text-slate-500">Âge :</span> {quote.extraction.equipment_age_years != null ? `${quote.extraction.equipment_age_years} an(s)` : quote.extraction.equipment_age_band || "Non indiqué"}</div>
+                </div>
+                {(quote.extraction.faults || []).map((fault:any,index:number)=>{
+                  const line=quote.lines[index]; const match=quote.matches[index];
+                  return <div key={index} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1">
+                    <div><span className="font-semibold">Demande comprise :</span> {fault.description || "—"}</div>
+                    <div><span className="font-semibold">Équipement :</span> {fault.equipment_type || "—"}</div>
+                    <div><span className="font-semibold">Intervention tarifaire :</span> {line?.intervention || "—"} {line?.fault_code&&<span className="font-mono text-blue-700">({line.fault_code})</span>}</div>
+                    <div><span className="font-semibold">Complexité de cette panne :</span> {fault.complexity || quote.extraction.complexity || "—"}{fault.complexity_reason?` — ${fault.complexity_reason}`:""}</div>
+                    {match&&<div><span className="font-semibold">Correspondance catalogue :</span> {Math.round(Number(match.confidence||0)*100)} % · {match.retrieval==="vector"?"embeddings":"recherche textuelle"}</div>}
+                    {line?.components&&<div><span className="font-semibold">Détail :</span> pièces {line.components.parts} + main-d’œuvre {line.components.labour} + marge {line.components.fixed_margin} + équipement {line.components.equipment} = {line.total} {quote.currency}</div>}
+                  </div>;
+                })}
+                <p className="text-slate-500">Si la demande comprise ou l’intervention tarifaire ne correspond pas à votre besoin, refusez le devis et reformulez avant de réserver.</p>
+              </div>
+            </details>
             {!priceDecision&&(
               <div className="px-4 pb-4 border-t border-gray-100 pt-4">
                 <div className="text-sm font-medium text-foreground mb-3">Que souhaitez-vous faire ?</div>

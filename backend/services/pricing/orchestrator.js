@@ -34,6 +34,7 @@ class PricingOrchestrator {
     else if (requireResolvedCountry) extraction.country = "";
     this.normalizeExtraction(extraction);
     this.enrichFilterQuote(extraction, text, history);
+    this.enrichKnownInterventions(extraction, text, history);
     if (extraction.clarification_needed) {
       if (!extraction.clarification_question || typeof extraction.clarification_question !== "string") {
         throw new Error("DeepSeek clarification is incomplete");
@@ -192,6 +193,21 @@ class PricingOrchestrator {
     extraction.clarification_question = null;
     extraction.urgency ||= "Standard";
     extraction.complexity ||= "Simple";
+  }
+
+  enrichKnownInterventions(extraction, text, history) {
+    const conversation = this.conversationText(text, history);
+    if (/remplacement\s+(?:du\s+|d['’]un\s+)?compresseur/i.test(conversation)
+      && /(?:clim|climatiseur|climatisation|split)/i.test(conversation)) {
+      const fault = extraction.faults?.[0];
+      if (!fault) return;
+      fault.code_hint = /central|gainable|rooftop/i.test(conversation) ? "CLR008" : "CLR007";
+      fault.description = /central|gainable|rooftop/i.test(conversation)
+        ? "Remplacement compresseur climatiseur central"
+        : "Remplacement compresseur climatiseur split";
+      fault.equipment_type = /central|gainable|rooftop/i.test(conversation) ? "climatiseur central" : "climatiseur split";
+      fault.intervention_type = "Reparation";
+    }
   }
 
   renderDeterministicQuote(extraction, calculation, confidenceBand) {
