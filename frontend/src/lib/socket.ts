@@ -1,4 +1,5 @@
 import { io, type Socket } from "socket.io-client";
+import { getAuthToken } from "./auth-storage";
 
 let socket: Socket | null = null;
 let socketToken: string | null = null;
@@ -10,7 +11,7 @@ function socketUrl() {
 }
 
 export function realtimeSocket() {
-  const token = localStorage.getItem("token");
+  const token = getAuthToken();
   if (!token) return null;
   if (!socket || socketToken !== token) {
     socket?.disconnect();

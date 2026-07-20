@@ -1,4 +1,5 @@
 import axios from "axios";
+import { clearAuthSession, getAuthToken } from "./auth-storage";
 
 // 👉 URL backend correcte
 const api = axios.create({
@@ -7,7 +8,7 @@ const api = axios.create({
 
 // ✅ Ajouter automatiquement le token JWT
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = getAuthToken();
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -22,8 +23,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Token invalide ou expiré
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      clearAuthSession();
 
       // Redirection vers login
       window.location.href = "/";

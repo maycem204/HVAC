@@ -32,8 +32,8 @@ function ProfileAvatar({ value, name, size = "small" }: { value?: string; name: 
   return <div className={`${classes} rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0`}>{initials}</div>;
 }
 
-export default function ConversationsPanel({ currentUserId, initialTechnician, onClose, onContacted }:
-  { currentUserId: number; initialTechnician?: TechnicianSummary | null; onClose?: () => void; onContacted?: (id: number) => void }) {
+export default function ConversationsPanel({ initialTechnician, onClose, onContacted }:
+  { initialTechnician?: TechnicianSummary | null; onClose?: () => void; onContacted?: (id: number) => void }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -74,26 +74,26 @@ export default function ConversationsPanel({ currentUserId, initialTechnician, o
     setError("");
     setConversations((items) => items.map((item) => item.id === selected.id ? { ...item, unread_count: 0 } : item));
     api.get(`/conversations/${selected.id}/messages`)
-      .then(({ data }) => { if (!cancelled) setMessages(data.map((message: DirectMessage)=>({...message,mine:String(message.sender_id)===String(currentUserId)}))); })
+      .then(({ data }) => { if (!cancelled) setMessages(data.map((message: DirectMessage)=>({...message,mine:String(message.sender_id)!==String(selected.counterpart_id)}))); })
       .catch(() => { if (!cancelled) setError("Impossible de charger cette conversation."); });
     return () => { cancelled = true; };
-  }, [selected?.id, currentUserId]);
+  }, [selected?.id, selected?.counterpart_id]);
 
   useEffect(() => {
     const socket = realtimeSocket();
     if (!socket) return;
     const receive = (message: DirectMessage) => {
-      const normalizedMessage = { ...message, mine:String(message.sender_id)===String(currentUserId) };
       setConversations((items) => items.map((item) => item.id === Number(message.conversation_id)
-        ? { ...item, last_message: message.body, unread_count: normalizedMessage.mine || selected?.id === item.id ? 0 : (item.unread_count || 0) + 1 }
+        ? { ...item, last_message: message.body, unread_count: String(message.sender_id)!==String(item.counterpart_id) || selected?.id === item.id ? 0 : (item.unread_count || 0) + 1 }
         : item));
       if (selected?.id === Number(message.conversation_id)) {
+        const normalizedMessage = { ...message, mine:String(message.sender_id)!==String(selected.counterpart_id) };
         setMessages((items) => items.some((item) => item.id === message.id) ? items : [...items, normalizedMessage]);
       }
     };
     socket.on("message:new", receive);
     return () => { socket.off("message:new", receive); };
-  }, [selected?.id]);
+  }, [selected?.id, selected?.counterpart_id]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -136,7 +136,7 @@ export default function ConversationsPanel({ currentUserId, initialTechnician, o
           </header>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-blue-50/40" style={{backgroundImage:"radial-gradient(rgba(37,99,235,.07) 1px, transparent 1px)",backgroundSize:"18px 18px"}}>
             {messages.map((message) => {
-              const mine = message.mine ?? String(message.sender_id) === String(currentUserId);
+              const mine = message.mine ?? String(message.sender_id) !== String(selected.counterpart_id);
               return (
                 <div key={message.id} className={`flex w-full ${mine ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[75%] px-3 py-2 rounded-xl text-sm shadow-sm ${mine ? "bg-blue-100 text-slate-900 rounded-br-sm ml-auto" : "bg-white text-slate-900 border border-gray-100 rounded-bl-sm mr-auto"}`}>

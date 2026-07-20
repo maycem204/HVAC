@@ -12,6 +12,7 @@ import api from "../lib/api";
 import TechnicianMap from "./TechnicianMap";
 import ConversationsPanel from "./ConversationsPanel";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
+import { clearAuthSession, getAuthToken, storeAuthSession } from "../lib/auth-storage";
 import { useSpeechRecognition } from "../features/chatbot/useSpeechRecognition";
 import type {
   AppUser, Appointment, BlockedSlot, ChatMsg, ClientTab, Lead, Notification,
@@ -406,8 +407,7 @@ function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; o
       const { data } = await api.post(url, payload);
 
 
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      storeAuthSession(data.token, data.user);
 
       onLogin(data.user, data.token);
     } catch (err: any) {
@@ -515,14 +515,14 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
           <ClientRdv technicians={technicians} appointments={appointments} setAppointments={setAppointments}/>
         )}
         {tab==="map"&&<ClientMap technicians={technicians} location={location} contactedTechs={contactedTechs} onContact={contactTechnician}/>}
-        {tab==="messages"&&<ConversationsPanel currentUserId={user.id} onContacted={markContacted}/>}
+        {tab==="messages"&&<ConversationsPanel onContacted={markContacted}/>}
       </div>
       {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&(
         <ProfileModal user={user} role="client" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>
       )}
       {contactTechId!=null&&(
-        <ConversationsPanel currentUserId={user.id} initialTechnician={technicians.find((technician)=>technician.id===contactTechId) ?? null} onContacted={markContacted} onClose={()=>setContactTechId(null)}/>
+        <ConversationsPanel initialTechnician={technicians.find((technician)=>technician.id===contactTechId) ?? null} onContacted={markContacted} onClose={()=>setContactTechId(null)}/>
       )}
     </div>
   );
@@ -1049,7 +1049,7 @@ function TechDashboard({ user, location, onLogout, onUpdateUser }:
       </div>
       <div className="flex-1 overflow-y-auto">
         {tab==="leads"&&<TechLeads/>}
-        {tab==="messages"&&<ConversationsPanel currentUserId={user.id}/>}
+        {tab==="messages"&&<ConversationsPanel/>}
         {tab==="tarifs"&&<TechTarifs city={user.city}/>}
         {tab==="agenda"&&<TechAgenda/>}
       </div>
@@ -1462,9 +1462,9 @@ export default function App() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [booting, setBooting] = useState(true);
 
-  // Auto-login si un token valide est déjà en localStorage
+  // Auto-login dans la session propre à cet onglet.
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken();
     if (!token) { setBooting(false); return; }
     api.get("/me")
       .then((res) => {
@@ -1481,7 +1481,7 @@ export default function App() {
         }
         setView(currentUser.role === "client" ? "client" : "tech");
       })
-      .catch(() => localStorage.removeItem("token"))
+      .catch(() => clearAuthSession())
       .finally(() => setBooting(false));
   }, []);
 
@@ -1510,7 +1510,7 @@ export default function App() {
     }
     setView(role==="client"?"client":"tech");
   }
-  function logout(){ disconnectRealtime(); localStorage.removeItem("token"); setUser(null);setLocation(null);setView("home"); }
+  function logout(){ disconnectRealtime(); clearAuthSession(); setUser(null);setLocation(null);setView("home"); }
   function updateUser(u: AppUser){setUser(u);}
 
   if (booting) {
