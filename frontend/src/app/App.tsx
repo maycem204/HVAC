@@ -921,7 +921,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
 
   return (
     <div className="h-full flex flex-col md:flex-row overflow-hidden">
-      <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col">
+      <div className="relative z-[1100] w-full max-h-[55vh] md:max-h-none md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col shadow-sm md:shadow-none">
         <div className="p-3 border-b border-border space-y-2">
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Nom ou spécialisation…" className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
           <div className="flex gap-1.5 flex-wrap">
@@ -975,7 +975,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
         </div>
       </div>
 
-      <div className="flex-1 min-h-[420px] relative overflow-hidden">
+      <div className="z-0 flex-1 min-h-[420px] relative overflow-hidden isolate">
         <TechnicianMap technicians={filtered.map((technician)=>({...technician,canRate:technician.canRate||contactedTechs.includes(technician.id)}))} location={location} selectedId={selected} onSelect={selectTechnician} onContact={onContact} onRate={(id)=>{const technician=technicians.find((item)=>item.id===id);setSelected(id);setRatingTech(id);setRatingDraft({rating:technician?.myRating||0,comment:technician?.myRatingComment||""});}}/>
         <div className="absolute z-[1000] bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5 pointer-events-none">
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">Disponible</span></div>
