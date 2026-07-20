@@ -19,6 +19,7 @@ class PricingOrchestrator {
     const vagueRequest = this.clarifyVagueBreakdown(text, history);
     if (vagueRequest) return vagueRequest;
 
+    const responseLanguage = this.detectResponseLanguage(text, history);
     let extraction;
     try {
       extraction = await this.llm.extract({
@@ -32,6 +33,7 @@ class PricingOrchestrator {
     }
     if (clientCountry) extraction.country = clientCountry;
     else if (requireResolvedCountry) extraction.country = "";
+    extraction.response_language = responseLanguage;
     this.normalizeExtraction(extraction);
     this.enrichFilterQuote(extraction, text, history);
     this.enrichKnownInterventions(extraction, text, history);
@@ -39,12 +41,15 @@ class PricingOrchestrator {
       if (!extraction.clarification_question || typeof extraction.clarification_question !== "string") {
         throw new Error("DeepSeek clarification is incomplete");
       }
+      if (responseLanguage === "ar" && !/\p{Script=Arabic}/u.test(extraction.clarification_question)) {
+        extraction.clarification_question = "هل يمكنك توضيح العطل أو الخدمة المطلوبة، وذكر الأعراض التي تظهر على الجهاز ومتى بدأت؟";
+      }
       return { status: "clarification", question: extraction.clarification_question, extraction };
     }
     if (!String(extraction.country || "").trim()) {
       return {
         status: "clarification",
-        question: "Dans quel pays se trouve l’appareil ? Cette information est nécessaire pour appliquer la devise et le barème local.",
+        question: responseLanguage === "ar" ? "في أي بلد يوجد الجهاز؟ هذه المعلومة ضرورية لتطبيق العملة والتعريفة المحلية." : "Dans quel pays se trouve l’appareil ? Cette information est nécessaire pour appliquer la devise et le barème local.",
         extraction: { ...extraction, clarification_needed: true, reason: "country_missing" },
       };
     }
@@ -72,7 +77,7 @@ class PricingOrchestrator {
       if (!candidates.length) return this.human(text, extraction, clientId, "no_semantic_match", 0);
       const best = candidates.find((candidate)=>this.equipmentCompatible(candidate, fault));
       if (!best) {
-        return { status:"clarification", question:"Le catalogue contient plusieurs types d’appareils incompatibles avec votre description. Pouvez-vous préciser s’il s’agit d’un split mural, d’un climatiseur mobile ou d’un système central ?", extraction };
+        return { status:"clarification", question:responseLanguage === "ar" ? "هل يمكنك تحديد ما إذا كان الجهاز مكيف سبليت جداريًا، مكيفًا متنقلًا، أم نظامًا مركزيًا؟" : "Le catalogue contient plusieurs types d’appareils incompatibles avec votre description. Pouvez-vous préciser s’il s’agit d’un split mural, d’un climatiseur mobile ou d’un système central ?", extraction };
       }
       const structural = structuralScore({
         countryMatch: Boolean(extraction.country),
@@ -137,6 +142,14 @@ class PricingOrchestrator {
 
   conversationText(text, history) {
     return [...history.slice(-10).map((message) => message?.text || message?.content || ""), text].join(" ").toLocaleLowerCase("fr");
+  }
+
+  detectResponseLanguage(text, history) {
+    const current = String(text || "");
+    if (/\p{Script=Arabic}/u.test(current)) return "ar";
+    if (/\p{Script=Latin}/u.test(current)) return "fr";
+    const previous = history.filter((message)=>message?.role === "user").slice(-3).map((message)=>message.text || message.content || "").join(" ");
+    return /\p{Script=Arabic}/u.test(previous) ? "ar" : "fr";
   }
 
   clarifyVagueBreakdown(text, history) {
@@ -237,6 +250,11 @@ class PricingOrchestrator {
       ? ` Le minimum de déplacement/intervention locale est inclus (${amount.format(calculation.service_minimum)} ${calculation.currency}).`
       : "";
     const uncertainty = confidenceBand === "medium" ? " Cette estimation reste à confirmer après diagnostic." : "";
+    if (extraction.response_language === "ar") {
+      const arabicMinimum = calculation.service_minimum_adjustment > 0 ? ` يشمل السعر الحد الأدنى المحلي للخدمة والتنقل (${amount.format(calculation.service_minimum)} ${calculation.currency}).` : "";
+      const arabicUncertainty = confidenceBand === "medium" ? " هذا التقدير يحتاج إلى تأكيد بعد المعاينة." : "";
+      return `تقدير تكلفة ${interventions}: ${amount.format(calculation.total)} ${calculation.currency} (النطاق ${range}).${arabicMinimum}${arabicUncertainty}`;
+    }
     return `Estimation pour ${interventions} : ${amount.format(calculation.total)} ${calculation.currency} (fourchette ${range}).${minimumNote}${uncertainty}`;
   }
 
@@ -328,13 +346,23 @@ class PricingOrchestrator {
       this.repository.queueFallback?.(entry),
     ]);
     const assignment = assignTechnician && queued?.status === "fulfilled" ? queued.value?.assignment || null : null;
-    const baseMessage = messages[failureCode] || "Votre cas nécessite l’avis d’un technicien. Votre demande a été enregistrée.";
+    const arabicMessages = {
+      llm_unavailable: "خدمة الذكاء الاصطناعي غير متاحة مؤقتًا. تم تسجيل طلبك للمعالجة البشرية.",
+      llm_unavailable_after_calculation: "تعذر التحقق من عرض السعر بواسطة الذكاء الاصطناعي. تم تسجيل طلبك للمراجعة البشرية.",
+      embedding_unavailable: "البحث عن حالات مشابهة غير متاح مؤقتًا. تم تسجيل طلبك للمعالجة البشرية.",
+      vector_search_unavailable: "قاعدة البحث الدلالي غير متاحة مؤقتًا. تم تسجيل طلبك للمعالجة البشرية.",
+      pricing_factor_unavailable: "التعريفة المناسبة للبلد أو الموسم أو درجة الاستعجال غير مكتملة. تم تسجيل طلبك للمراجعة.",
+      no_semantic_match: "لم يتم العثور على حالة مشابهة بشكل موثوق في الدليل. يجب على فني تحليل الحالة.",
+      low_confidence: "تم العثور على حالات مشابهة، لكن مستوى الثقة غير كافٍ. يجب على فني تأكيد التشخيص.",
+    };
+    const language = extraction?.response_language || this.detectResponseLanguage(text, []);
+    const baseMessage = language === "ar" ? (arabicMessages[failureCode] || "تتطلب حالتك رأي فني. تم تسجيل طلبك.") : (messages[failureCode] || "Votre cas nécessite l’avis d’un technicien. Votre demande a été enregistrée.");
     return {
       status: "human_handoff",
       failure_code: failureCode,
       retryable: ["llm_unavailable", "llm_unavailable_after_calculation", "embedding_unavailable", "vector_search_unavailable"].includes(failureCode),
       message: assignment
-        ? `${baseMessage} Elle a été transmise à ${assignment.technicianName}, technicien disponible correspondant à cette panne.`
+        ? language === "ar" ? `${baseMessage} تم تحويل الطلب إلى الفني المتاح ${assignment.technicianName} والمتخصص في هذه الحالة.` : `${baseMessage} Elle a été transmise à ${assignment.technicianName}, technicien disponible correspondant à cette panne.`
         : baseMessage,
       extraction,
       confidence,

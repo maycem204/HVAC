@@ -34,6 +34,23 @@ test("un message vide est rejeté avant l'appel au LLM", async () => {
   await assert.rejects(() => orchestrator.quote({ text: "   " }), /message is required/i);
 });
 
+test("détecte l'arabe et revient au français lorsque le client change de langue", () => {
+  const orchestrator = new PricingOrchestrator({ repository:{}, embeddings:{}, llm:{} });
+  assert.equal(orchestrator.detectResponseLanguage("المكيف لا يبرد", []), "ar");
+  assert.equal(orchestrator.detectResponseLanguage("la clim ne refroidit plus", [{ role:"user", text:"السلام" }]), "fr");
+});
+
+test("remplace une clarification française du LLM par une clarification arabe", async () => {
+  const orchestrator = new PricingOrchestrator({
+    repository:{}, embeddings:{},
+    llm:{ async extract(){ return { faults:[], clarification_needed:true, clarification_question:"Pouvez-vous préciser ?" }; } },
+  });
+  const result = await orchestrator.quote({ text:"المكيف معطل", history:[] });
+  assert.equal(result.status, "clarification");
+  assert.match(result.question, /[\u0600-\u06ff]/);
+  assert.equal(result.extraction.response_language, "ar");
+});
+
 test("une panne générique demande le symptôme et ne calcule jamais de prix", async () => {
   let llmCalled = false;
   const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: { async extract() { llmCalled = true; } } });
