@@ -17,9 +17,12 @@ const orchestrator = new PricingOrchestrator({
   llm: createLlmClient(env),
   embeddings: new EmbeddingClient({
     apiKey: env.embeddingApiKey,
+    enabled: env.embeddingEnabled,
+    provider: env.embeddingProvider,
     baseUrl: env.embeddingBaseUrl,
     model: env.embeddingModel,
     dimensions: env.embeddingDimensions,
+    requestDimensions: env.embeddingRequestDimensions,
     queryInstruction: env.embeddingQueryInstruction,
     timeoutMs: env.embeddingTimeoutMs,
   }),

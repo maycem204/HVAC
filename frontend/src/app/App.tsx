@@ -12,59 +12,15 @@ import api from "../lib/api";
 import TechnicianMap from "./TechnicianMap";
 import ConversationsPanel from "./ConversationsPanel";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
+import { useSpeechRecognition } from "../features/chatbot/useSpeechRecognition";
+import type {
+  AppUser, Appointment, BlockedSlot, ChatMsg, ClientTab, Lead, Notification,
+  PriceDecision, PriceItem, Role, SuggestedSlot, Technician, TechTab,
+  UserLocation, View,
+} from "./domain";
+import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type Role = "client" | "technician";
-type View = "home" | "auth" | "location" | "client" | "tech";
-type ClientTab = "chat" | "rdv" | "map" | "messages";
-type TechTab = "leads" | "tarifs" | "agenda" | "messages";
-type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
-type PriceDecision = "accept" | "decline" | null;
-
-interface AppUser { id: number; name: string; email: string; phone: string; address: string; city: string; role: Role; avatar: string; lat?: number; lng?: number; }
-interface ChatMsg { role: "bot" | "user"; text: string; }
-interface UserLocation { lat: number; lng: number; city: string; district: string; }
-
-interface Notification {
-  id: number; type: "lead" | "rdv" | "price" | "rating" | "system" | "reassign" | "message";
-  title: string; message: string; time: string; read: boolean;
-}
-
-interface SuggestedSlot { date: string; label: string; time: string; techId: number; }
-
-interface Appointment {
-  id: number; client: string; clientId?: number;
-  technicianId: number; technicianName: string;
-  clientPhone?: string; technicianPhone?: string;
-  date: string; time: string; service: string; faultType?: string;
-  estimatedPrice: number; actualPrice?: number; status: AppointmentStatus;
-  currency: string;
-  address: string; duration?: string; caseDescription?: string;
-  clientConfirmedPrice?: boolean; rating?: number; feedback?: string;
-}
-
-interface PriceItem { id?: number; service: string; unit: string; price: number; category: string; country_code?: string; currency?: string; }
-
-interface Technician {
-  id: number; name: string; specialty: string; specializations: string[];
-  rating: number; reviews: number; distanceKm: number | null;
-  available: boolean; price: string; response: string; tags: string[];
-  avatar: string; color: string; lat: number; lng: number;
-  canRate: boolean; myRating?: number;
-}
-
-interface BlockedSlot {
-  id: number; type: "specific" | "daily" | "weekly";
-  date?: string; weekDays?: number[];
-  startTime: string; endTime: string; label: string;
-}
-
-interface Lead {
-  id: number; client: string; problem: string; price: number; confidence: number;
-  time: string; status: "new" | "accepted" | "done"; city: string; faultType: string;
-  appointmentId?: number; requestedDate?: string; requestedTime?: string; address?: string;
-}
 
 // ─── Config statique (pas des données métier — restent en dur) ───────────────
 
@@ -133,116 +89,6 @@ function technicianMatchesFault(technician: Technician, faultType: string): bool
 
 // ─── Mappers backend (snake_case) → frontend (camelCase) ─────────────────────
 // Adapte ces mappers si le format réel renvoyé par ton API diffère.
-
-function mapTechnician(row: any): Technician {
-  return {
-    id: row.id ?? row.user_id,
-    name: row.name,
-    specialty: row.specialty ?? (row.specializations ?? []).slice(0, 2).join(" & "),
-    specializations: row.specializations ?? [],
-    rating: Number(row.rating ?? 0),
-    reviews: Number(row.reviews_count ?? row.reviews ?? 0),
-    distanceKm: row.distance_km == null ? null : Number(row.distance_km ?? row.distanceKm),
-    available: !!row.available,
-    price: row.price_label ?? row.price ?? "Sur devis",
-    response: row.response_time ?? row.response ?? "—",
-    tags: row.tags ?? [],
-    avatar: row.avatar ?? row.name?.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase(),
-    color: row.color ?? "bg-blue-500",
-    lat: Number(row.lat ?? 0),
-    lng: Number(row.lng ?? 0),
-    canRate: Boolean(row.can_rate ?? row.canRate),
-    myRating: row.my_rating == null ? undefined : Number(row.my_rating),
-  };
-}
-
-function mapAppointment(row: any): Appointment {
-  return {
-    id: row.id,
-    client: row.client_name ?? row.client,
-    clientId: row.client_id,
-    technicianId: row.technician_id,
-    technicianName: row.technician_name ?? row.technicianName,
-    clientPhone: row.client_phone,
-    technicianPhone: row.technician_phone,
-    date: row.date,
-    time: row.time,
-    service: row.service,
-    faultType: row.fault_type,
-    estimatedPrice: Number(row.estimated_price ?? 0),
-    currency: row.currency || "EUR",
-    actualPrice: row.actual_price != null ? Number(row.actual_price) : undefined,
-    status: row.status,
-    address: row.address,
-    duration: row.duration,
-    caseDescription: row.case_description,
-    clientConfirmedPrice: !!row.client_confirmed_price,
-    rating: row.rating ?? undefined,
-    feedback: row.feedback ?? undefined,
-  };
-}
-
-function mapNotification(row: any): Notification {
-  return {
-    id: row.id,
-    type: row.type,
-    title: row.title,
-    message: row.message,
-    time: row.time ?? new Date(row.created_at).toLocaleString("fr-FR"),
-    read: !!row.read,
-  };
-}
-
-function mapBlockedSlot(row: any): BlockedSlot {
-  return {
-    id: row.id,
-    type: row.type,
-    date: row.date,
-    weekDays: row.week_days ?? row.weekDays,
-    startTime: row.start_time ?? row.startTime,
-    endTime: row.end_time ?? row.endTime,
-    label: row.label,
-  };
-}
-
-function mapLead(row: any): Lead {
-  return {
-    id: row.id,
-    client: row.client_name ?? row.client,
-    problem: row.problem,
-    price: Number(row.price ?? 0),
-    confidence: Number(row.confidence ?? 0),
-    time: row.time ?? new Date(row.created_at).toLocaleString("fr-FR"),
-    status: row.status,
-    city: row.city,
-    faultType: row.fault_type,
-    appointmentId: row.appointment_id == null ? undefined : Number(row.appointment_id),
-    requestedDate: row.requested_date,
-    requestedTime: row.requested_time,
-    address: row.address,
-  };
-}
-
-// ─── Speech Recognition ───────────────────────────────────────────────────────
-
-function useSpeechRecognition(onResult: (text: string) => void) {
-  const [isListening, setIsListening] = useState(false);
-  const [supported, setSupported] = useState(false);
-  const recRef = useRef<any>(null);
-  useEffect(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-    setSupported(true);
-    const rec = new SR();
-    rec.lang = "fr-FR"; rec.continuous = false; rec.interimResults = false;
-    rec.onresult = (e: any) => onResult(Array.from(e.results as any[]).map((r: any) => r[0].transcript).join(" "));
-    rec.onend = () => setIsListening(false);
-    rec.onerror = () => setIsListening(false);
-    recRef.current = rec;
-  }, []);
-  function toggle() { if (!recRef.current) return; if (isListening) { recRef.current.stop(); setIsListening(false); } else { recRef.current.start(); setIsListening(true); } }
-  return { isListening, supported, toggle };
-}
 
 // ─── Notification Panel ───────────────────────────────────────────────────────
 

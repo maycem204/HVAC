@@ -46,6 +46,36 @@ class PricingRepository {
     return result.rows;
   }
 
+  async findTextCandidates(filters, limit = 5) {
+    const description = String(filters.description || "").trim();
+    if (!description) return [];
+    const result = await this.pool.query(
+      `WITH query_tokens AS (
+         SELECT DISTINCT token
+         FROM regexp_split_to_table(unaccent(lower($1)), '[^a-z0-9]+') AS token
+         WHERE length(token) >= 3
+       ), scored AS (
+         SELECT f.*,
+           COUNT(*) FILTER (
+             WHERE unaccent(lower(concat_ws(' ', f.code, f.category, f.subcategory, f.name, f.notes)))
+               LIKE '%' || q.token || '%'
+           )::float / GREATEST(COUNT(*)::float, 1) AS token_coverage
+         FROM pricing_faults f
+         CROSS JOIN query_tokens q
+         WHERE f.active = true
+           AND ($2::text IS NULL OR f.intervention_type = $2)
+         GROUP BY f.id
+       )
+       SELECT scored.*, LEAST(0.95, 0.55 + token_coverage * 0.4)::float AS semantic_score
+       FROM scored
+       WHERE token_coverage > 0
+       ORDER BY token_coverage DESC, code ASC
+       LIMIT $3`,
+      [description, filters.intervention_type || null, limit]
+    );
+    return result.rows;
+  }
+
   async getFactors({ country, urgency, complexity, season, interventionType }) {
     const [region, urgencyRow, complexityRow, seasonRow, margin, serviceMinimum] = await Promise.all([
       this.pool.query("SELECT * FROM pricing_regions WHERE unaccent(lower(country)) = unaccent(lower($1)) AND active = true LIMIT 1", [country]),

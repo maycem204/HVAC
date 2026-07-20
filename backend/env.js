@@ -19,6 +19,14 @@ function envInt(name, fallback) {
   return value;
 }
 
+function envBool(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return fallback;
+  if (["true", "1", "yes"].includes(raw.toLowerCase())) return true;
+  if (["false", "0", "no"].includes(raw.toLowerCase())) return false;
+  throw new Error(`Environment variable ${name} must be a boolean`);
+}
+
 const corsOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
@@ -70,9 +78,12 @@ module.exports = {
   llmBaseUrl: process.env.LLM_BASE_URL || activeProvider.baseUrl,
   llmModel: process.env.LLM_MODEL || activeProvider.model,
   embeddingApiKey: process.env.EMBEDDING_API_KEY || "",
+  embeddingEnabled: envBool("EMBEDDING_ENABLED", true),
+  embeddingProvider: (process.env.EMBEDDING_PROVIDER || "openai-compatible").toLowerCase(),
   embeddingBaseUrl: process.env.EMBEDDING_BASE_URL || "http://127.0.0.1:8081/v1",
   embeddingModel: process.env.EMBEDDING_MODEL || "Qwen/Qwen3-Embedding-8B",
   embeddingDimensions: envInt("EMBEDDING_DIMENSIONS", 1024),
+  embeddingRequestDimensions: envBool("EMBEDDING_REQUEST_DIMENSIONS", false),
   embeddingQueryInstruction: process.env.EMBEDDING_QUERY_INSTRUCTION ?? "Retrieve the HVAC fault catalog entry that best matches the user request",
   embeddingBatchSize: envInt("EMBEDDING_BATCH_SIZE", 16),
   embeddingTimeoutMs: envInt("EMBEDDING_TIMEOUT_MS", 180000),

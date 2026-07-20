@@ -22,14 +22,20 @@ services:
         value: deepseek
       - key: LLM_API_KEY
         sync: false
-      - key: EMBEDDING_BASE_URL
+      - key: EMBEDDING_ENABLED
+        value: "true"
+      - key: EMBEDDING_PROVIDER
+        value: gemini
+      - key: EMBEDDING_API_KEY
         sync: false
+      - key: EMBEDDING_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta
       - key: EMBEDDING_MODEL
-        value: BAAI/bge-m3
+        value: gemini-embedding-2
       - key: EMBEDDING_DIMENSIONS
         value: "1024"
       - key: EMBEDDING_BATCH_SIZE
-        value: "8"
+        value: "4"
 databases:
   - name: quoteai-postgres
     # PostgreSQL gratuit : 1 Go, sans sauvegarde et expiration apres 30 jours.

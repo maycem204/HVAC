@@ -43,16 +43,21 @@ class PricingOrchestrator {
     const matches = [];
     for (const fault of extraction.faults) {
       let vector;
+      let candidates;
+      let retrieval = "vector";
       try {
         vector = await this.embeddings.embed(fault.description, "query");
-      } catch (error) {
-        return this.human(text, extraction, clientId, "embedding_unavailable", null, error);
-      }
-      let candidates;
-      try {
         candidates = await this.repository.findCandidates(vector, fault, 5, this.embeddings.storageModel);
       } catch (error) {
-        return this.human(text, extraction, clientId, "vector_search_unavailable", null, error);
+        if (typeof this.repository.findTextCandidates !== "function") {
+          return this.human(text, extraction, clientId, "embedding_unavailable", null, error);
+        }
+        try {
+          candidates = await this.repository.findTextCandidates(fault, 5);
+          retrieval = "text";
+        } catch (fallbackError) {
+          return this.human(text, extraction, clientId, "vector_search_unavailable", null, fallbackError);
+        }
       }
       if (!candidates.length) return this.human(text, extraction, clientId, "no_semantic_match", 0);
       const best = candidates.find((candidate)=>this.equipmentCompatible(candidate, fault));
@@ -64,7 +69,7 @@ class PricingOrchestrator {
         interventionTypeMatch: best.intervention_type === fault.intervention_type,
         equipmentTypeMatch: this.equipmentMatches(best, fault),
       });
-      matches.push({ fault: best, confidence: faultConfidence(best.semantic_score, structural) });
+      matches.push({ fault: best, confidence: faultConfidence(best.semantic_score, structural), retrieval });
     }
     const confidence = caseConfidence(matches.map((match) => match.confidence));
     const thresholds = await this.repository.getThresholds();
@@ -102,14 +107,14 @@ class PricingOrchestrator {
         return this.human(text, extraction, clientId, "llm_unavailable_after_calculation", confidence, error);
       }
       if (judged.valid === true) {
-        const result = { status: "quote", message: rendered.message, extraction, matches: matches.map((m) => ({ code: m.fault.code, confidence: m.confidence })), confidence, confidence_band: routing.band, calculation };
+        const result = { status: "quote", message: rendered.message, extraction, matches: matches.map((m) => ({ code: m.fault.code, confidence: m.confidence, retrieval: m.retrieval })), confidence, confidence_band: routing.band, calculation };
         await this.repository.saveAudit({ clientId, requestText: text, extraction, confidence, decision: "automatic", calculation, renderedQuote: rendered.message, judgeResult: judged });
         return result;
       }
       rejectionReason = judged.reason || "Validation rejected";
     }
     const fallbackMessage = this.renderDeterministicQuote(extraction, calculation, routing.band);
-    const result = { status: "quote", message: fallbackMessage, extraction, matches: matches.map((m) => ({ code: m.fault.code, confidence: m.confidence })), confidence, confidence_band: routing.band, calculation, rendering_fallback: true };
+    const result = { status: "quote", message: fallbackMessage, extraction, matches: matches.map((m) => ({ code: m.fault.code, confidence: m.confidence, retrieval: m.retrieval })), confidence, confidence_band: routing.band, calculation, rendering_fallback: true };
     await this.repository.saveAudit({ clientId, requestText: text, extraction, confidence, decision: "automatic", calculation, renderedQuote: fallbackMessage, judgeResult: { valid: true, reason: "Deterministic rendering used after writer validation failures" }, failureCode: "writer_validation_fallback" });
     return result;
   }
