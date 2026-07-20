@@ -748,8 +748,9 @@ app.patch("/appointments/:id", auth, async (req, res) => {
            case_description = COALESCE($3, case_description),
            client_confirmed_price = COALESCE($4, client_confirmed_price)
        WHERE id = $5 AND (client_id = $6 OR technician_id = $6)
+         AND ($1 IS DISTINCT FROM 'cancelled' OR $7 = true OR status IN ('pending', 'confirmed'))
        RETURNING *`,
-      [fields.status, fields.actual_price, fields.case_description, fields.client_confirmed_price, req.params.id, req.user.id]
+      [fields.status, fields.actual_price, fields.case_description, fields.client_confirmed_price, req.params.id, req.user.id, isTechnician]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: "Appointment not found" });
     if (isTechnician && requestedStatus === "confirmed") {
@@ -759,6 +760,15 @@ app.patch("/appointments/:id", auth, async (req, res) => {
          ON CONFLICT (client_id, technician_id) DO UPDATE SET updated_at = now()`,
         [result.rows[0].client_id, result.rows[0].technician_id]
       );
+    }
+    if (!isTechnician && requestedStatus === "cancelled") {
+      const notification = await pool.query(
+        `INSERT INTO notifications (user_id, type, title, message)
+         VALUES ($1, 'rdv', 'Rendez-vous annulé', $2) RETURNING *`,
+        [result.rows[0].technician_id, `Le client a annulé le rendez-vous du ${sqlDate(result.rows[0].date)} à ${String(result.rows[0].time).slice(0, 5)}.`]
+      );
+      emitToUser(result.rows[0].technician_id, "appointment:updated", result.rows[0]);
+      emitToUser(result.rows[0].technician_id, "notification:new", notification.rows[0]);
     }
     res.json(result.rows[0]);
   } catch (err) {

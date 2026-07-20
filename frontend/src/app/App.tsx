@@ -769,8 +769,23 @@ function ClientRdv({ technicians, appointments, setAppointments }:
   const [selectedAppt, setSelectedAppt] = useState<Appointment|null>(null);
   const [feedbackAppt, setFeedbackAppt] = useState<number|null>(null);
   const [feedback, setFeedback] = useState({ rating:0, comment:"" });
-  const completed = appointments.filter((a)=>a.status==="completed");
+  const [cancelAppt, setCancelAppt] = useState<Appointment|null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const history = appointments.filter((a)=>a.status==="completed"||a.status==="cancelled");
   const upcoming = appointments.filter((a)=>a.status==="confirmed"||a.status==="pending");
+
+  async function cancelAppointment() {
+    if (!cancelAppt || cancelling) return;
+    setCancelling(true); setCancelError("");
+    try {
+      const { data } = await api.patch(`/appointments/${cancelAppt.id}`, { status:"cancelled" });
+      setAppointments((apps)=>apps.map((appointment)=>appointment.id===cancelAppt.id?mapAppointment(data):appointment));
+      setCancelAppt(null);
+    } catch (error:any) {
+      setCancelError(error.response?.data?.error || "Impossible d’annuler ce rendez-vous.");
+    } finally { setCancelling(false); }
+  }
 
   async function confirmPrice(id: number) {
     setAppointments((apps)=>apps.map((a)=>a.id===id?{...a,clientConfirmedPrice:true}:a));
@@ -803,6 +818,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
                   <div className="flex items-start justify-between"><div><div className="font-semibold text-foreground">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="confirmed"?"green":"amber"}>{appt.status==="confirmed"?"Confirmé":"En attente"}</Badge></div>
                   <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div><div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/>{appt.time}</div><div className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/>{appt.address}</div></div>
                   <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">Prix estimé : </span><span className="font-bold">{appt.estimatedPrice} {appt.currency}</span></div>
+                  <button onClick={()=>{setCancelError("");setCancelAppt(appt);}} className="mt-3 h-9 px-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100">Annuler ce rendez-vous</button>
                   {ratable&&!appt.rating&&!showFb&&<button onClick={()=>setFeedbackAppt(appt.id)} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1"><Star className="w-3.5 h-3.5"/>Évaluer</button>}
                   {showFb&&(
                     <div className="mt-3 space-y-2 pt-3 border-t border-gray-100">
@@ -818,7 +834,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
         </div>
       )}
       <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Historique</h3>
-      <div className="space-y-3">{completed.map((appt)=>{
+      <div className="space-y-3">{history.map((appt)=>{
         const tech = technicians.find((t)=>t.id===appt.technicianId);
         const isExp = selectedAppt?.id===appt.id;
         const showFb = feedbackAppt===appt.id;
@@ -826,7 +842,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
           <div key={appt.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <button onClick={()=>setSelectedAppt(isExp?null:appt)} className="w-full p-5 text-left hover:bg-gray-50">
               <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
-                <div className="flex items-start justify-between"><div><div className="font-semibold">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color="blue">Terminé</Badge></div>
+                <div className="flex items-start justify-between"><div><div className="font-semibold">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="cancelled"?"red":"blue"}>{appt.status==="cancelled"?"Annulé":"Terminé"}</Badge></div>
                 <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div>{appt.rating&&<div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400"/><span className="text-foreground font-medium">{appt.rating}/5</span></div>}</div>
               </div><ChevronRight className={`w-5 h-5 text-muted-foreground transition-transform ${isExp?"rotate-90":""}`}/></div>
             </button>
@@ -854,6 +870,16 @@ function ClientRdv({ technicians, appointments, setAppointments }:
           </div>
         );
       })}</div>
+      {cancelAppt&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={(event)=>{if(event.target===event.currentTarget&&!cancelling)setCancelAppt(null);}}>
+        <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-11 h-11 rounded-full bg-red-50 text-red-600 flex items-center justify-center mb-4"><AlertCircle className="w-5 h-5"/></div>
+          <h3 id="cancel-title" className="text-lg font-bold">Confirmer l’annulation</h3>
+          <p className="mt-2 text-sm text-muted-foreground">Voulez-vous vraiment annuler le rendez-vous avec <strong className="text-foreground">{cancelAppt.technicianName}</strong>, prévu le {cancelAppt.date} à {cancelAppt.time} ?</p>
+          <p className="mt-2 text-xs text-red-600">Le technicien sera immédiatement informé.</p>
+          {cancelError&&<div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{cancelError}</div>}
+          <div className="mt-6 flex gap-2"><button onClick={()=>setCancelAppt(null)} disabled={cancelling} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50">Garder le rendez-vous</button><button onClick={cancelAppointment} disabled={cancelling} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{cancelling?"Annulation…":"Oui, annuler"}</button></div>
+        </div>
+      </div>}
     </div>
   );
 }
