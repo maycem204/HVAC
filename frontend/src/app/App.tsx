@@ -49,21 +49,25 @@ function resizeProfileImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) return reject(new Error("Choisissez une image de moins de 5 Mo."));
     const image = new Image();
-    const url = URL.createObjectURL(file);
+    const reader = new FileReader();
     image.onload = () => {
       const size = 256;
       const canvas = document.createElement("canvas");
       canvas.width = size; canvas.height = size;
       const context = canvas.getContext("2d");
-      if (!context) { URL.revokeObjectURL(url); return reject(new Error("Image illisible.")); }
+      if (!context) return reject(new Error("Votre navigateur ne permet pas de redimensionner cette image."));
       const scale = Math.max(size / image.width, size / image.height);
       const width = image.width * scale; const height = image.height * scale;
       context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
-      URL.revokeObjectURL(url);
       resolve(canvas.toDataURL("image/jpeg", 0.82));
     };
-    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image illisible.")); };
-    image.src = url;
+    image.onerror = () => reject(new Error("Format non reconnu. Utilisez une image JPEG, PNG ou WebP."));
+    reader.onerror = () => reject(new Error("Impossible de lire le fichier sélectionné."));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return reject(new Error("Impossible de lire le fichier sélectionné."));
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   });
 }
 
