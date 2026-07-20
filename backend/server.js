@@ -630,6 +630,8 @@ app.get("/availability/suggestions", auth, requireRole("client"), async (req, re
   try {
     const specialty = String(req.query.specialty || "Climatisation");
     const urgency = ["critical", "urgent", "normal"].includes(String(req.query.urgency)) ? String(req.query.urgency) : "normal";
+    const requestedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? String(req.query.date) : null;
+    const requestedPeriod = ["morning", "afternoon", "evening", "any"].includes(String(req.query.period)) ? String(req.query.period) : "any";
     const requester = await pool.query("SELECT lat, lng FROM users WHERE id = $1", [req.user.id]);
     const clientLat = requester.rows[0]?.lat == null ? null : Number(requester.rows[0].lat);
     const clientLng = requester.rows[0]?.lng == null ? null : Number(requester.rows[0].lng);
@@ -644,15 +646,20 @@ app.get("/availability/suggestions", auth, requireRole("client"), async (req, re
     })).filter((row) => row.distance_km == null || row.distance_km <= Number(row.radius_km || 10));
     const specialists = nearby.filter((row) => specialtyMatches(row.specializations, specialty));
     const generalists = nearby.filter((row) => (row.specializations || []).some((value) => /reparation|maintenance|depannage|hvac/i.test(normalizedSpecialty(value))));
-    const candidates = specialists.length ? specialists : generalists;
+    const candidates = (specialists.length ? specialists : generalists)
+      .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY));
     const horizon = urgency === "critical" ? 2 : urgency === "urgent" ? 4 : 7;
     const slots = [];
     const now = new Date();
-    for (let offset = urgency === "normal" ? 1 : 0; offset <= horizon; offset += 1) {
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    for (let offset = requestedDate ? 0 : urgency === "normal" ? 1 : 0; offset <= (requestedDate ? 0 : horizon); offset += 1) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
-      const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-      for (const hour of [8, 10, 12, 14, 16, 18]) {
-        if (offset === 0 && hour <= now.getHours() + 1) continue;
+      const date = requestedDate || `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+      const hours = requestedPeriod === "morning" ? [8, 10, 12]
+        : requestedPeriod === "afternoon" ? [14, 16]
+          : requestedPeriod === "evening" ? [18] : [8, 10, 12, 14, 16, 18];
+      for (const hour of hours) {
+        if (date === today && hour <= now.getHours() + 1) continue;
         const time = `${String(hour).padStart(2, "0")}:00`;
         for (const technician of candidates) {
           if ((await isTechnicianAvailable(technician.id, date, time)).available) {
@@ -661,7 +668,7 @@ app.get("/availability/suggestions", auth, requireRole("client"), async (req, re
         }
       }
     }
-    res.json({ specialty, urgency, matched_technicians: candidates.length, match_level: specialists.length ? "specialist" : "generalist", slots });
+    res.json({ specialty, urgency, requested_date: requestedDate, requested_period: requestedPeriod, matched_technicians: candidates.length, match_level: specialists.length ? "specialist" : "generalist", slots: slots.slice(0, 24) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

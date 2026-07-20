@@ -5,6 +5,7 @@
   "scripts": {
     "db:init": "node db/init.js",
     "db:seed": "node db/seed.js",
+    "db:demo-technicians": "node db/demo-technicians.js",
     "dev": "nodemon server.js",
     "start": "node server.js",
     "test": "node --test tests/**/*.test.js",

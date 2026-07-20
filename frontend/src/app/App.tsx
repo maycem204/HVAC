@@ -526,6 +526,29 @@ function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }
 // Chaque message part au backend. Le fournisseur LLM actif mène la clarification et le moteur
 // déterministe produit le devis dès que les informations sont suffisantes.
 
+type ScheduleRequest = { date: string | null; period: "morning" | "afternoon" | "evening" | "any" };
+
+function localIsoDate(offsetDays: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+
+function schedulingIntent(text: string): ScheduleRequest | null {
+  const normalized = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const date = /\baujourd[’']?hui\b/.test(normalized) ? localIsoDate(0)
+    : /\bdemain\b/.test(normalized) ? localIsoDate(1) : null;
+  const period = /apres[ -]?midi/.test(normalized) ? "afternoon"
+    : /\bmatin(?:ee)?\b/.test(normalized) ? "morning"
+      : /\bsoir(?:ee)?\b/.test(normalized) ? "evening" : "any";
+  return date || period !== "any" ? { date, period } : null;
+}
+
+function readableDistance(distanceKm: number | null) {
+  if (distanceKm == null) return "distance indisponible";
+  return distanceKm < 1 ? `${Math.max(1, Math.round(distanceKm * 1000))} m` : `${distanceKm.toFixed(1)} km`;
+}
+
 function ClientChat({ technicians, location, onContact, onAppointmentCreated }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void; onAppointmentCreated: (appointment: Appointment) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro." }]);
   const [input, setInput] = useState("");
@@ -539,6 +562,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   const [slotsError, setSlotsError] = useState("");
   const [booked, setBooked] = useState(false);
   const [customDate, setCustomDate] = useState("");
+  const [scheduleRequest, setScheduleRequest] = useState<ScheduleRequest>({ date:null, period:"any" });
   const bottomRef = useRef<HTMLDivElement>(null);
   const { isListening, supported, toggle:toggleMic } = useSpeechRecognition((text)=>setInput((p)=>p+(p?" ":"")+text));
   const faultType = detectFaultType(messages);
@@ -551,8 +575,8 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   async function loadSuggestedSlots() {
     setSlotsLoading(true); setSelectedSlot(null); setSlotsError("");
     try {
-      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency } });
-      setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
+      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency, date: scheduleRequest.date || undefined, period: scheduleRequest.period } });
+      setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), distanceKm: slot.distance_km == null ? null : Number(slot.distance_km), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
     } catch (err) { console.error(err); setProposedSlots([]); setSlotsError("Impossible de consulter les agendas pour le moment. Réessayez dans quelques instants."); }
     finally { setSlotsLoading(false); }
   }
@@ -561,6 +585,8 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   async function send(text: string) {
     if (loading||!text.trim()) return;
     const nextMessages = [...messages, { role:"user" as const, text }];
+    const directSchedule = schedulingIntent(text);
+    if (directSchedule) setScheduleRequest(directSchedule);
     setMessages(nextMessages); setInput(""); setLoading(true); setQuote(null); setPriceDecision(null);
     try {
       const { data } = await api.post("/api/pricing/quote", {
@@ -568,6 +594,10 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         history: nextMessages.slice(0, -1),
         location: location ? { city: location.city, lat: location.lat, lng: location.lng } : undefined,
       });
+      const llmSchedule = data.extraction?.schedule_request;
+      if (llmSchedule && (/^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule.date || "")) || ["morning","afternoon","evening"].includes(llmSchedule.period))) {
+        setScheduleRequest({ date: /^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule.date || "")) ? llmSchedule.date : directSchedule?.date || null, period: ["morning","afternoon","evening"].includes(llmSchedule.period) ? llmSchedule.period : directSchedule?.period || "any" });
+      }
       if (data.status === "quote") {
         setQuote({ price: data.calculation.total, low: data.calculation.range.min, high: data.calculation.range.max, conf: Math.round(data.confidence * 100), currency: data.calculation.currency, subtotal: data.calculation.subtotal ?? data.calculation.total, minimumAdjustment: data.calculation.service_minimum_adjustment ?? 0 });
       }
@@ -676,7 +706,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
                   <button key={i} onClick={()=>setSelectedSlot(slot)} className={`w-full text-left p-3 rounded-xl border transition-all ${isSel?"border-primary bg-blue-50":"border-gray-200 hover:border-gray-300 bg-gray-50/50"}`}>
                     <div className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-full ${tech.color} flex items-center justify-center text-white text-xs font-bold shrink-0`}>{tech.avatar}</div>
-                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {tech.distanceKm == null ? "distance indisponible" : `${tech.distanceKm.toFixed(1)} km`} · {tech.response}</div><div className="mt-1 flex items-center gap-1 text-xs"><Star className={`w-3.5 h-3.5 ${tech.reviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span>{tech.reviews>0?`${tech.rating}/5 (${tech.reviews} avis client${tech.reviews>1?"s":""})`:"Pas encore évalué"}</span></div></div>
+                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {readableDistance(slot.distanceKm)} · {tech.response}</div><div className="mt-1 flex items-center gap-1 text-xs"><Star className={`w-3.5 h-3.5 ${tech.reviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span>{tech.reviews>0?`${tech.rating}/5 (${tech.reviews} avis client${tech.reviews>1?"s":""})`:"Pas encore évalué"}</span></div></div>
                       {isSel&&<Check className="w-4 h-4 text-primary shrink-0"/>}
                     </div>
                   </button>
