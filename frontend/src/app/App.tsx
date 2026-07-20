@@ -1351,12 +1351,15 @@ function TechAgenda() {
   }
 
   function openDirections(appt: Appointment) {
-    const destination = encodeURIComponent(appt.address || appt.client || "");
-    if (!destination) {
-      alert("Aucune adresse enregistrée pour ce rendez-vous.");
+    const hasCoordinates = Number.isFinite(appt.clientLat) && Number.isFinite(appt.clientLng)
+      && (Number(appt.clientLat) !== 0 || Number(appt.clientLng) !== 0);
+    const locationText = [appt.address || appt.clientProfileAddress, appt.clientCity].filter(Boolean).join(", ");
+    const destination = hasCoordinates ? `${appt.clientLat},${appt.clientLng}` : locationText;
+    if (!destination.trim()) {
+      alert("Le client n’a enregistré ni coordonnées GPS, ni adresse, ni ville.");
       return;
     }
-    window.open(`https://www.google.com/maps/search/?api=1&query=${destination}`, "_blank", "noopener,noreferrer");
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`, "_blank", "noopener,noreferrer");
   }
 
   const dayApts = apptForDay(selectedDay);
@@ -1393,7 +1396,7 @@ function TechAgenda() {
                 <div className="w-px bg-gray-100 self-stretch"/>
                 <div className="flex-1">
                   <div className="flex items-start justify-between"><div><div className="font-semibold text-sm">{appt.service}</div><div className="text-sm mt-0.5">{appt.client}</div></div><span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${s.badge}`}>{s.label}</span></div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2"><MapPin className="w-3 h-3"/>{appt.address}</div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2"><MapPin className="w-3 h-3"/>{appt.address || appt.clientProfileAddress || appt.clientCity || "Localisation non renseignée"}</div>
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="text-sm mb-2"><span className="text-muted-foreground">Estimé : </span><span className="font-bold">{appt.estimatedPrice} €</span></div>
                     {appt.status==="completed"&&appt.actualPrice?<div><div className="text-sm mb-1"><span className="text-muted-foreground">Réel : </span><span className="font-bold text-emerald-600">{appt.actualPrice} €</span></div>{appt.caseDescription&&<div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded-lg mt-1">{appt.caseDescription}</div>}</div>

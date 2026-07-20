@@ -611,6 +611,10 @@ app.get("/appointments", auth, async (req, res) => {
       `SELECT a.*,
               cu.name AS client_name,
               cu.phone AS client_phone,
+              cu.city AS client_city,
+              cu.address AS client_profile_address,
+              cu.lat AS client_lat,
+              cu.lng AS client_lng,
               tu.name AS technician_name,
               tu.phone AS technician_phone
        FROM appointments a
@@ -686,7 +690,7 @@ app.post("/appointments", auth, requireRole("client"), async (req, res) => {
     if (!technician.rows.length) return res.status(404).json({ error: "Technicien indisponible ou introuvable" });
     const availability = await isTechnicianAvailable(Number(technicianId), date, time);
     if (!availability.available) return res.status(409).json({ error: availability.reason });
-    const clientProfile = await client.query("SELECT name, city, address FROM users WHERE id = $1", [req.user.id]);
+    const clientProfile = await client.query("SELECT name, city, address, lat, lng FROM users WHERE id = $1", [req.user.id]);
     const bookingAddress = address || clientProfile.rows[0]?.address || null;
     await client.query("BEGIN");
     const result = await client.query(
@@ -711,7 +715,7 @@ app.post("/appointments", auth, requireRole("client"), async (req, res) => {
       [technicianId, `Rendez-vous ${service || ""} le ${date} à ${time}`]
     );
     await client.query("COMMIT");
-    const payload = { ...result.rows[0], client_name: clientProfile.rows[0]?.name, client_city: clientProfile.rows[0]?.city, technician_name: technician.rows[0].name };
+    const payload = { ...result.rows[0], client_name: clientProfile.rows[0]?.name, client_city: clientProfile.rows[0]?.city, client_profile_address: clientProfile.rows[0]?.address, client_lat: clientProfile.rows[0]?.lat, client_lng: clientProfile.rows[0]?.lng, technician_name: technician.rows[0].name };
     emitToUser(technicianId, "appointment:new", payload);
     emitToUser(technicianId, "lead:new", { ...lead.rows[0], client_name: clientProfile.rows[0]?.name });
     emitToUser(technicianId, "notification:new", notification.rows[0]);
