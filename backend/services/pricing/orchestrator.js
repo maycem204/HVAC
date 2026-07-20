@@ -8,7 +8,7 @@ class PricingOrchestrator {
     this.repository = repository; this.llm = llm; this.embeddings = embeddings;
   }
 
-  async quote({ text, history = [], clientCountry, clientId }) {
+  async quote({ text, history = [], clientCountry, clientId, requireResolvedCountry = false }) {
     if (!text || typeof text !== "string" || text.trim().length === 0) {
       const error = new Error("A message is required"); error.status = 400; throw error;
     }
@@ -31,6 +31,8 @@ class PricingOrchestrator {
       return this.human(text, null, clientId, "llm_unavailable", null, error);
     }
     if (clientCountry) extraction.country = clientCountry;
+    else if (requireResolvedCountry) extraction.country = "";
+    this.normalizeExtraction(extraction);
     this.enrichFilterQuote(extraction, text, history);
     if (extraction.clarification_needed) {
       if (!extraction.clarification_question || typeof extraction.clarification_question !== "string") {
@@ -210,6 +212,45 @@ class PricingOrchestrator {
     }
   }
 
+  normalizeExtraction(extraction) {
+    const normalized = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const mapComplexity = (value) => {
+      const key = normalized(value);
+      if (/exception/.test(key)) return "Exceptionnelle";
+      if (/tres.*eleve|extreme/.test(key)) return "Très élevée";
+      if (/eleve|complexe|difficile/.test(key)) return "Élevée";
+      if (/modere|moyen|intermediaire/.test(key)) return "Modérée";
+      if (/simple|faible|standard|facile/.test(key)) return "Simple";
+      return value;
+    };
+    const mapUrgency = (value) => {
+      const key = normalized(value);
+      if (/nuit|week.?end|ferie/.test(key)) return "Nuit / Week-end / Jour férié";
+      if (/immediat|critique|danger/.test(key)) return "Urgence immédiate";
+      if (/urgent|jour meme/.test(key)) return "Urgent";
+      if (/rapid|24|48/.test(key)) return "Rapide";
+      if (/standard|normal|planif/.test(key)) return "Standard";
+      return value;
+    };
+    const mapSeason = (value) => {
+      const key = normalized(value);
+      if (/canicule|vague de chaleur/.test(key)) return "Période de canicule / vague de chaleur";
+      if (/haute.*ete|ete.*clim/.test(key)) return "Haute saison été (clim)";
+      if (/haute.*hiver|hiver.*chauff/.test(key)) return "Haute saison hiver (chauffage)";
+      if (/intermediaire|printemps|automne/.test(key)) return "Saison intermédiaire";
+      if (/basse/.test(key)) return "Basse saison";
+      return value;
+    };
+    extraction.complexity = mapComplexity(extraction.complexity);
+    extraction.urgency = mapUrgency(extraction.urgency);
+    extraction.season = mapSeason(extraction.season);
+    for (const fault of extraction.faults || []) {
+      fault.complexity = mapComplexity(fault.complexity || extraction.complexity);
+      if (/repar|remplac|maintenance|diagnostic/.test(normalized(fault.intervention_type))) fault.intervention_type = "Reparation";
+      else if (/install|pose/.test(normalized(fault.intervention_type))) fault.intervention_type = "Installation";
+    }
+  }
+
   equipmentMatches(row, fault) {
     const reference = `${row.category} ${row.subcategory} ${row.name}`.toLowerCase();
     const terms = String(fault.equipment_type || "").toLowerCase().split(/\s+/).filter((term) => term.length > 3);
@@ -245,12 +286,13 @@ class PricingOrchestrator {
         causeMessage: error.cause?.message || null,
       });
     }
-    const entry = { clientId, requestText: text, extraction, confidence, failureCode, lastError: error?.code || error?.name || null };
+    const assignTechnician = ["no_semantic_match", "low_confidence", "judge_validation_failed"].includes(failureCode);
+    const entry = { clientId, requestText: text, extraction, confidence, failureCode, lastError: error?.code || error?.name || null, assignTechnician };
     const [, queued] = await Promise.allSettled([
       this.repository.saveAudit?.({ ...entry, decision: "human" }),
       this.repository.queueFallback?.(entry),
     ]);
-    const assignment = queued?.status === "fulfilled" ? queued.value?.assignment || null : null;
+    const assignment = assignTechnician && queued?.status === "fulfilled" ? queued.value?.assignment || null : null;
     const baseMessage = messages[failureCode] || "Votre cas nécessite l’avis d’un technicien. Votre demande a été enregistrée.";
     return {
       status: "human_handoff",

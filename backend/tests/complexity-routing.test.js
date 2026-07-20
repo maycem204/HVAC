@@ -55,7 +55,37 @@ test("annonce le technicien réellement affecté lors du transfert humain", asyn
     embeddings: {},
     llm: { async extract() { throw new Error("indisponible"); } },
   });
-  const result = await orchestrator.quote({ text: "panne complexe", clientId: 2 });
+  const result = await orchestrator.human("panne complexe", { faults: [{ description: "panne climatisation" }] }, 2, "low_confidence", 0.35);
   assert.equal(result.assignment.technicianId, 9);
   assert.match(result.message, /Sami/);
+});
+
+test("normalise les synonymes tarifaires du LLM", () => {
+  const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: {} });
+  const extraction = {
+    faults: [{ intervention_type: "Réparation", complexity: "Moyenne" }],
+    complexity: "Moyenne",
+    urgency: "Normale",
+    season: "Haute saison hiver",
+  };
+  orchestrator.normalizeExtraction(extraction);
+  assert.equal(extraction.faults[0].intervention_type, "Reparation");
+  assert.equal(extraction.faults[0].complexity, "Modérée");
+  assert.equal(extraction.urgency, "Standard");
+  assert.equal(extraction.season, "Haute saison hiver (chauffage)");
+});
+
+test("n'affecte pas un technicien pour une panne de configuration", async () => {
+  let receivedEntry;
+  const orchestrator = new PricingOrchestrator({
+    repository: {
+      async saveAudit() {},
+      async queueFallback(entry) { receivedEntry = entry; return { assignment: { technicianId: 9, technicianName: "Sami" } }; },
+    },
+    embeddings: {}, llm: {},
+  });
+  const result = await orchestrator.human("demande", {}, 2, "pricing_factor_unavailable", 0.8);
+  assert.equal(receivedEntry.assignTechnician, false);
+  assert.equal(result.assignment, null);
+  assert.doesNotMatch(result.message, /transmise à/i);
 });

@@ -166,11 +166,11 @@ class PricingRepository {
         ? await client.query("SELECT id, name, city, lat, lng FROM users WHERE id=$1", [entry.clientId])
         : { rows: [] };
       const clientRow = clientResult.rows[0] || {};
-      const technicians = await client.query(
+      const technicians = entry.assignTechnician ? await client.query(
         `SELECT u.id, u.name, u.lat, u.lng, t.specializations, t.radius_km, t.rating
          FROM users u JOIN technician_profiles t ON t.user_id=u.id
          WHERE u.role='technician' AND t.available=true`
-      );
+      ) : { rows: [] };
       const ranked = technicians.rows.map((technician) => {
         const distance = distanceKm(clientRow.lat, clientRow.lng, technician.lat, technician.lng);
         return { ...technician, distance, relevance: technicianRelevance(technician.specializations, entry.extraction, entry.requestText) };

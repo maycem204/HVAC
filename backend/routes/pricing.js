@@ -52,7 +52,7 @@ router.post("/quote", auth, quoteLimiter, async (req, res, next) => {
       instantLocation: body.location,
       profile: user.rows[0],
     });
-    const result = await orchestrator.quote({ text, history: body.history, clientCountry, clientId: req.user.id });
+    const result = await orchestrator.quote({ text, history: body.history, clientCountry, clientId: req.user.id, requireResolvedCountry: true });
     res.json(result);
   } catch (error) { next(error); }
 });
