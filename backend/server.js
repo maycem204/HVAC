@@ -380,7 +380,7 @@ app.get("/technicians", auth, async (req, res) => {
 
     const result = await pool.query(`
       SELECT 
-        u.id, u.name, u.city, u.lat, u.lng,
+        u.id, u.name, u.city, u.lat, u.lng, u.avatar,
         t.specializations, t.rating, t.reviews_count,
         t.available, t.response_time, t.radius_km,
         EXISTS (
@@ -389,14 +389,11 @@ app.get("/technicians", auth, async (req, res) => {
         ) OR EXISTS (
           SELECT 1 FROM conversations c
           WHERE c.client_id = $1 AND c.technician_id = u.id
-            AND EXISTS (
-              SELECT 1 FROM appointments a
-              WHERE a.client_id = c.client_id AND a.technician_id = c.technician_id
-                AND a.status IN ('confirmed', 'completed')
-            )
         ) AS can_rate,
         (SELECT r.rating FROM technician_ratings r
-         WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating
+         WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating,
+        (SELECT r.comment FROM technician_ratings r
+         WHERE r.client_id = $1 AND r.technician_id = u.id LIMIT 1) AS my_rating_comment
       FROM users u
       JOIN technician_profiles t ON u.id = t.user_id
       WHERE u.role = 'technician'

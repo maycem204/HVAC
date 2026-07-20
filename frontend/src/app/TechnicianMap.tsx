@@ -16,6 +16,7 @@ type MapTechnician = {
   specialty: string;
   rating: number;
   reviews: number;
+  canRate: boolean;
 };
 
 function validPoint(point: { lat: number; lng: number }) {
@@ -62,8 +63,8 @@ const userIcon = L.divIcon({
   popupAnchor: [0, -16],
 });
 
-export default function TechnicianMap({ technicians, location, selectedId, onSelect, onContact }:
-  { technicians: MapTechnician[]; location: Coordinates | null; selectedId: number | null; onSelect: (id: number) => void; onContact: (id: number) => void }) {
+export default function TechnicianMap({ technicians, location, selectedId, onSelect, onContact, onRate }:
+  { technicians: MapTechnician[]; location: Coordinates | null; selectedId: number | null; onSelect: (id: number) => void; onContact: (id: number) => void; onRate: (id: number) => void }) {
   const visibleTechnicians = technicians.filter(validPoint);
   const points = useMemo<Array<[number, number]>>(() => {
     const result = visibleTechnicians.map((technician) => [technician.lat, technician.lng] as [number, number]);
@@ -96,6 +97,7 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
         >
           <Popup>
             <div className="min-w-44">
+              {technician.avatar?.startsWith("data:image/")&&<img src={technician.avatar} alt={`Photo de ${technician.name}`} className="mb-2 h-14 w-14 rounded-full object-cover"/>}
               <strong>{technician.name}</strong>
               <div>{technician.specialty || "Technicien HVAC"}</div>
               <div style={{color:technician.reviews>0?"#d97706":"#64748b"}}>{technician.reviews>0?`★ ${technician.rating}/5 · ${technician.reviews} avis`:"Aucun avis"}</div>
@@ -103,6 +105,7 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
               <button type="button" onClick={() => onContact(technician.id)} className="mt-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">
                 Contacter
               </button>
+              {technician.canRate&&<button type="button" onClick={() => onRate(technician.id)} className="ml-1 mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">Évaluer</button>}
             </div>
           </Popup>
         </Marker>
