@@ -5,6 +5,10 @@ const env = require("../env");
 const { EmbeddingClient } = require("../services/pricing/embedding-client");
 const { vectorLiteral } = require("../services/pricing/repository");
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   const embeddings = new EmbeddingClient({
     apiKey: env.embeddingApiKey,
@@ -21,7 +25,18 @@ async function main() {
   for (let offset = 0; offset < result.rows.length; offset += env.embeddingBatchSize) {
     const batch = result.rows.slice(offset, offset + env.embeddingBatchSize);
     const documents = batch.map((row) => [row.code, row.category, row.subcategory, row.name, row.notes].filter(Boolean).join(" | "));
-    const vectors = await embeddings.embed(documents, "document");
+    let vectors;
+    for (;;) {
+      try {
+        vectors = await embeddings.embed(documents, "document");
+        break;
+      } catch (error) {
+        if (!error?.retryable) throw error;
+        const seconds = Math.ceil(env.embeddingQuotaRetryMs / 1000);
+        console.warn(`Embedding quota/service unavailable (${error.code || "unknown"}); retrying batch at ${offset} in ${seconds}s`);
+        await delay(env.embeddingQuotaRetryMs);
+      }
+    }
     for (let index = 0; index < batch.length; index += 1) {
       await pool.query("UPDATE pricing_faults SET embedding=$1::vector, embedding_model=$2, updated_at=now() WHERE id=$3", [vectorLiteral(vectors[index]), embeddings.storageModel, batch[index].id]);
     }

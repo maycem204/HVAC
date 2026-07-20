@@ -87,6 +87,7 @@ module.exports = {
   embeddingQueryInstruction: process.env.EMBEDDING_QUERY_INSTRUCTION ?? "Retrieve the HVAC fault catalog entry that best matches the user request",
   embeddingBatchSize: envInt("EMBEDDING_BATCH_SIZE", 16),
   embeddingTimeoutMs: envInt("EMBEDDING_TIMEOUT_MS", 180000),
+  embeddingQuotaRetryMs: envInt("EMBEDDING_QUOTA_RETRY_MS", 15 * 60 * 1000),
   pricingLlmTimeoutMs: envInt("PRICING_LLM_TIMEOUT_MS", 30000),
   geocodingBaseUrl: process.env.GEOCODING_BASE_URL || "https://nominatim.openstreetmap.org",
   geocodingUserAgent: process.env.GEOCODING_USER_AGENT || "QuoteAI-HVAC/1.0",

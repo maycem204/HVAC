@@ -36,6 +36,8 @@ services:
         value: "1024"
       - key: EMBEDDING_BATCH_SIZE
         value: "4"
+      - key: EMBEDDING_QUOTA_RETRY_MS
+        value: "900000"
 databases:
   - name: quoteai-postgres
     # PostgreSQL gratuit : 1 Go, sans sauvegarde et expiration apres 30 jours.
