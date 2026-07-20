@@ -217,6 +217,7 @@ class PricingOrchestrator {
       llm_unavailable_after_calculation: "Le devis n’a pas pu être validé par l’IA. Votre demande est enregistrée pour contrôle humain.",
       embedding_unavailable: "La recherche de cas similaires est temporairement indisponible. Votre demande est enregistrée pour traitement humain.",
       vector_search_unavailable: "La base de recherche sémantique est temporairement indisponible. Votre demande est enregistrée pour traitement humain.",
+      pricing_factor_unavailable: "Le barème correspondant à votre pays, à la saison ou au niveau d’urgence est incomplet. Votre demande est enregistrée pour vérification.",
       no_semantic_match: "Aucun cas réellement similaire n’existe dans le catalogue. Un technicien doit analyser cette nouvelle situation.",
       low_confidence: "Des cas similaires ont été trouvés, mais leur fiabilité est insuffisante. Un technicien doit confirmer le diagnostic.",
       judge_validation_failed: "Le devis automatique n’a pas passé les contrôles de cohérence. Un technicien doit le vérifier.",

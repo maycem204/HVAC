@@ -15,7 +15,16 @@ function comparable(value) {
 
 function matchingRow(result, field, expected) {
   const target = comparable(expected);
-  return result.rows.find((row) => comparable(row[field]) === target);
+  const exact = result.rows.find((row) => comparable(row[field]) === target);
+  if (exact) return exact;
+  // A provider can omit a harmless qualifier from a controlled label, such
+  // as "Haute saison ete" instead of "Haute saison ete (clim)". Pricing
+  // values still come exclusively from the matching database row.
+  return result.rows.find((row) => {
+    const candidate = comparable(row[field]);
+    return target.length >= 5 && candidate.length >= 5
+      && (candidate.includes(target) || target.includes(candidate));
+  });
 }
 
 class PricingRepository {
