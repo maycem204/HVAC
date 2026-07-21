@@ -143,6 +143,27 @@ test("une installation explicite de split 12000 BTU force le code catalogue CLI0
   assert.equal(extraction.faults[0].intervention_type, "Installation");
 });
 
+test("comprend les symptômes d'un split dont l'unité extérieure démarre puis s'arrête", () => {
+  const extraction = {
+    ...validExtraction(),
+    faults: [],
+    clarification_needed: true,
+    clarification_question: "Quelle est la panne ?",
+  };
+  const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: {} });
+  orchestrator.enrichKnownInterventions(extraction,
+    "Bonjour, mon climatiseur split ne fonctionne plus correctement depuis quelques jours. "
+    + "L’unité intérieure s’allume normalement et le ventilateur tourne, mais l’air qui sort n’est plus froid. "
+    + "J’entends parfois un bruit de démarrage venant de l’unité extérieure, puis elle s’arrête après quelques secondes.",
+    []);
+
+  assert.equal(extraction.clarification_needed, false);
+  assert.equal(extraction.faults.length, 1);
+  assert.equal(extraction.faults[0].equipment_type, "climatiseur split");
+  assert.match(extraction.faults[0].description, /circuit de démarrage/i);
+  assert.equal(extraction.faults[0].code_hint, undefined);
+});
+
 test("un rejet du rédacteur utilise un devis déterministe au lieu d'un transfert humain", async () => {
   const repository = fallbackRepository({
     async findCandidates() {
@@ -170,6 +191,40 @@ test("un rejet du rédacteur utilise un devis déterministe au lieu d'un transfe
   assert.equal(result.rendering_fallback, true);
   assert.equal(result.calculation.total, 2500);
   assert.match(result.message, /2[\s ]500 DZD/);
+});
+
+test("une panne du rédacteur après calcul conserve le devis déterministe", async () => {
+  const repository = fallbackRepository({
+    async findCandidates() {
+      return [{ code: "CLR002", name: "Remplacement condensateur de démarrage", semantic_score: 0.99, intervention_type: "Reparation", category: "Climatisation", subcategory: "Split", base_parts_cost_usd: 53, estimated_hours: 1 }];
+    },
+    async getThresholds() { return { automatic: 0.7, uncertain: 0.5 }; },
+    async getFactors() {
+      return {
+        region: { exchange_rate_per_usd: 134, local_hourly_rate: 850, labour_adjustment: 0.9, equipment_import_factor: 1.15, currency_code: "DZD", minimum_service_price: 2500 },
+        urgency: { multiplier: 1 }, complexity: { multiplier: 1.1 }, season: { multiplier: 1 }, margin: { margin_usd: 3 },
+      };
+    },
+  });
+  const orchestrator = new PricingOrchestrator({
+    repository,
+    embeddings: { storageModel: "test", async embed() { return Array(1024).fill(0); } },
+    llm: {
+      async extract() { return validExtraction(); },
+      async redact() { throw Object.assign(new Error("provider timeout"), { code: "llm_timeout" }); },
+    },
+  });
+
+  const result = await orchestrator.quote({
+    text: "Mon climatiseur split souffle mais l’unité extérieure démarre puis s’arrête et l’air n’est plus froid",
+    clientId: 4,
+  });
+
+  assert.equal(result.status, "quote");
+  assert.equal(result.rendering_fallback, true);
+  assert.equal(result.rendering_failure, "llm_timeout");
+  assert.match(result.message, /Estimation/i);
+  assert.equal(repository.queued.length, 0);
 });
 
 function validExtraction() {

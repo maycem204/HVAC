@@ -125,7 +125,32 @@ class PricingOrchestrator {
         });
         judged = await this.llm.judge({ quote: rendered.message, extraction, calculation });
       } catch (error) {
-        return this.human(text, extraction, clientId, "llm_unavailable_after_calculation", confidence, error);
+        // Le calcul est déjà déterministe et validé à ce stade. Une indisponibilité
+        // du rédacteur ou du juge ne doit donc pas supprimer un devis exploitable.
+        const fallbackMessage = this.renderDeterministicQuote(extraction, calculation, routing.band);
+        const result = {
+          status: "quote",
+          message: fallbackMessage,
+          extraction,
+          matches: matches.map((m) => ({ code: m.fault.code, confidence: m.confidence, retrieval: m.retrieval })),
+          confidence,
+          confidence_band: routing.band,
+          calculation,
+          rendering_fallback: true,
+          rendering_failure: error.code || "llm_unavailable_after_calculation",
+        };
+        await this.repository.saveAudit({
+          clientId,
+          requestText: text,
+          extraction,
+          confidence,
+          decision: "automatic",
+          calculation,
+          renderedQuote: fallbackMessage,
+          judgeResult: { valid: true, reason: "Deterministic rendering used because the writer or judge was unavailable" },
+          failureCode: "writer_unavailable_fallback",
+        });
+        return result;
       }
       if (judged.valid === true) {
         const result = { status: "quote", message: rendered.message, extraction, matches: matches.map((m) => ({ code: m.fault.code, confidence: m.confidence, retrieval: m.retrieval })), confidence, confidence_band: routing.band, calculation };
@@ -229,6 +254,23 @@ class PricingOrchestrator {
       return;
     }
     const conversation = this.conversationText(text, history);
+    const splitLosesCooling = /(?:clim|climatiseur|climatisation).*split|split.*(?:clim|climatiseur|climatisation)/i.test(conversation)
+      && /(ne (?:fait|produit|donne) plus de froid|ne refroidit (?:plus|pas)|air (?:qui sort )?(?:n['’]est )?plus froid|air (?:pas )?froid)/i.test(conversation);
+    const outdoorShortCycles = /unit[eé] ext[eé]rieure/i.test(conversation)
+      && /(d[eé]marr|bruit de d[eé]marrage)/i.test(conversation)
+      && /(s['’]arr[eê]te|coupe|stoppe)/i.test(conversation);
+    if (splitLosesCooling && outdoorShortCycles) {
+      extraction.faults = [{
+        description: "Diagnostic du circuit de démarrage d’un climatiseur split : l’unité extérieure démarre puis s’arrête et l’air n’est plus froid",
+        equipment_type: "climatiseur split",
+        intervention_type: "Reparation",
+        complexity: extraction.complexity || "Modérée",
+        complexity_reason: "Contrôle électrique du démarrage de l’unité extérieure avant identification de la pièce défectueuse.",
+      }];
+      extraction.clarification_needed = false;
+      extraction.clarification_question = null;
+      return;
+    }
     if (/remplacement\s+(?:du\s+|d['’]un\s+)?compresseur/i.test(conversation)
       && /(?:clim|climatiseur|climatisation|split)/i.test(conversation)) {
       const fault = extraction.faults?.[0];
