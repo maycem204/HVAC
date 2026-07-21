@@ -134,4 +134,12 @@ function createApplicationSupport(pool) {
   return { isTechnicianAvailable, technicianMarket };
 }
 
-module.exports = { CITY_COORDS, createApplicationSupport, haversineKm, saveTechnicianRating, specialtyMatches, sqlDate };
+module.exports = {
+  CITY_COORDS,
+  createApplicationSupport,
+  haversineKm,
+  normalizedSpecialty,
+  saveTechnicianRating,
+  specialtyMatches,
+  sqlDate,
+};

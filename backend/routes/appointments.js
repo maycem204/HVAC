@@ -10,8 +10,8 @@ const { hashPassword, verifyPassword, validatePassword } = require("../utils/pas
 const { forwardGeocode, reverseGeocode } = require("../services/geocoding");
 const { parseTariffFile } = require("../services/tariff-file-parser");
 const {
-  CITY_COORDS, createApplicationSupport, haversineKm, saveTechnicianRating,
-  specialtyMatches, sqlDate,
+  CITY_COORDS, createApplicationSupport, haversineKm, normalizedSpecialty,
+  saveTechnicianRating, specialtyMatches, sqlDate,
 } = require("../services/application-support");
 const pool = require("../db");
 const { emitToUser } = require("../realtime");
