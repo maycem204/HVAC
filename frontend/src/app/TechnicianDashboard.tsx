@@ -30,7 +30,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser }:
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
-  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
+  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar },{ id:"reviews" as TechTab,label:"Évaluations",icon:Star }];
 
   useEffect(() => {
     api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
@@ -59,7 +59,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser }:
 
   function openTechNotification(notification: Notification) {
     markRead(notification.id);
-    const target: TechTab = notification.type === "message" ? "messages" : notification.type === "lead" || notification.type === "reassign" ? "leads" : notification.type === "rdv" || notification.type === "price" ? "agenda" : "leads";
+    const target: TechTab = notification.type === "message" ? "messages" : notification.type === "rating" ? "reviews" : notification.type === "lead" || notification.type === "reassign" ? "leads" : notification.type === "rdv" || notification.type === "price" ? "agenda" : "leads";
     setTab(target); setNotifOpen(false);
   }
 
@@ -83,9 +83,45 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser }:
         {tab==="messages"&&<ConversationsPanel/>}
         {tab==="tarifs"&&<TechTarifs city={user.city}/>}
         {tab==="agenda"&&<TechAgenda/>}
+        {tab==="reviews"&&<TechRatings technicianId={user.id}/>}
       </div>
       {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openTechNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&<ProfileModal user={user} role="technician" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
+    </div>
+  );
+}
+
+type TechnicianRating = { rating: number; comment: string | null; client_name: string; updated_at: string };
+
+function TechRatings({ technicianId }: { technicianId: number }) {
+  const [ratings, setRatings] = useState<TechnicianRating[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true); setError("");
+    api.get(`/technicians/${technicianId}/ratings`)
+      .then(({ data }) => setRatings(data.map((row: any) => ({ ...row, rating:Number(row.rating) }))))
+      .catch(() => setError("Impossible de charger vos évaluations pour le moment."))
+      .finally(() => setLoading(false));
+  }, [technicianId]);
+
+  const average = ratings.length ? ratings.reduce((sum, item)=>sum+item.rating,0)/ratings.length : 0;
+  const distribution = [5,4,3,2,1].map((score)=>({ score, count:ratings.filter((item)=>item.rating===score).length }));
+
+  return (
+    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+      <div className="mb-6"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Évaluations clients</h2><p className="text-sm text-muted-foreground">Consultez les notes et commentaires laissés par vos clients.</p></div>
+      {loading?<div className="py-16 text-center text-sm text-muted-foreground">Chargement des évaluations…</div>
+      :error?<div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+      :ratings.length===0?<div className="rounded-2xl border border-gray-100 bg-white p-10 text-center"><Star className="w-10 h-10 mx-auto text-gray-300 mb-3"/><div className="font-semibold">Aucune évaluation pour le moment</div><div className="text-sm text-muted-foreground mt-1">Les avis apparaîtront ici après les interventions évaluées par vos clients.</div></div>
+      :<>
+        <div className="grid md:grid-cols-[220px_1fr] gap-4 mb-6">
+          <div className="rounded-2xl border border-gray-100 bg-white p-5 text-center"><div className="text-4xl font-black text-amber-500">{average.toFixed(1)}</div><div className="flex justify-center gap-1 my-2">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=Math.round(average)?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div><div className="text-xs text-muted-foreground">{ratings.length} avis client{ratings.length>1?"s":""}</div></div>
+          <div className="rounded-2xl border border-gray-100 bg-white p-5 space-y-2">{distribution.map(({score,count})=><div key={score} className="flex items-center gap-3 text-xs"><span className="w-8 font-medium">{score} ★</span><div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{width:`${ratings.length?count/ratings.length*100:0}%`}}/></div><span className="w-6 text-right text-muted-foreground">{count}</span></div>)}</div>
+        </div>
+        <div className="space-y-3">{ratings.map((item,index)=><article key={`${item.client_name}-${item.updated_at}-${index}`} className="rounded-2xl border border-gray-100 bg-white p-4"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-sm">{item.client_name}</div><div className="flex gap-0.5 mt-1">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=item.rating?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div></div><time className="text-xs text-muted-foreground">{new Date(item.updated_at).toLocaleDateString("fr-FR")}</time></div>{item.comment?<p className="mt-3 text-sm leading-relaxed text-slate-700">{item.comment}</p>:<p className="mt-3 text-xs italic text-muted-foreground">Aucun commentaire écrit.</p>}</article>)}</div>
+      </>}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 export type Role = "client" | "technician";
 export type View = "home" | "auth" | "location" | "client" | "tech";
 export type ClientTab = "chat" | "rdv" | "map" | "messages";
-export type TechTab = "leads" | "tarifs" | "agenda" | "messages";
+export type TechTab = "leads" | "tarifs" | "agenda" | "messages" | "reviews";
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled";
 export type PriceDecision = "accept" | "decline" | null;
 
