@@ -183,8 +183,8 @@ router.get("/technicians/me/stats", auth, requireRole("technician"), async (req,
     );
     const rating = await pool.query(
       `SELECT COALESCE(AVG(rating), 0)::float AS avg_rating
-       FROM appointments
-       WHERE technician_id = $1 AND rating IS NOT NULL`,
+       FROM technician_ratings
+       WHERE technician_id = $1`,
       [req.user.id]
     );
     res.json({

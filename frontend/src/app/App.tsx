@@ -66,6 +66,7 @@ export default function App() {
   }
   function logout(){ disconnectRealtime(); clearAuthSession(); setUser(null);setLocation(null);setView("home"); }
   function updateUser(u: AppUser){setUser(u);}
+  function updateTechnicianLocation(loc: UserLocation, updatedUser: AppUser){setLocation(loc);setUser(updatedUser);}
 
   if (booting) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"/></div>;
@@ -78,7 +79,7 @@ export default function App() {
       {view==="auth"&&<AuthForm role={role} onBack={()=>setView("home")} onLogin={handleLogin}/>}
       {view==="location"&&user&&<LocationModal role={role} user={user} onDone={handleLocation}/>}
       {view==="client"&&user&&<ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser}/>}
-      {view==="tech"&&user&&<TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser}/>}
+      {view==="tech"&&user&&<TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} onLocationUpdate={updateTechnicianLocation}/>}
     </div>
   );
 }

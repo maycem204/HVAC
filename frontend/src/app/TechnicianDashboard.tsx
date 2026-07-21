@@ -22,15 +22,18 @@ import type {
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { Avatar, Badge, ConfidenceBar, NotificationPanel, ProfileModal } from "./SharedUi";
 
-export function TechDashboard({ user, location, onLogout, onUpdateUser }:
-  { user: AppUser; location: UserLocation|null; onLogout: ()=>void; onUpdateUser: (u: AppUser)=>void }) {
+export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocationUpdate }:
+  { user: AppUser; location: UserLocation|null; onLogout: ()=>void; onUpdateUser: (u: AppUser)=>void; onLocationUpdate: (loc:UserLocation,u:AppUser)=>void }) {
   const [tab, setTab] = useState<TechTab>("leads");
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [ratingsOpen, setRatingsOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
-  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar },{ id:"reviews" as TechTab,label:"Évaluations",icon:Star }];
+  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
 
   useEffect(() => {
     api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
@@ -59,8 +62,27 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser }:
 
   function openTechNotification(notification: Notification) {
     markRead(notification.id);
-    const target: TechTab = notification.type === "message" ? "messages" : notification.type === "rating" ? "reviews" : notification.type === "lead" || notification.type === "reassign" ? "leads" : notification.type === "rdv" || notification.type === "price" ? "agenda" : "leads";
+    if (notification.type === "rating") { setRatingsOpen(true); setNotifOpen(false); return; }
+    const target: TechTab = notification.type === "message" ? "messages" : notification.type === "lead" || notification.type === "reassign" ? "leads" : notification.type === "rdv" || notification.type === "price" ? "agenda" : "leads";
     setTab(target); setNotifOpen(false);
+  }
+
+  function refreshCurrentLocation() {
+    if (!("geolocation" in navigator)) { setLocationError("La géolocalisation n’est pas disponible sur ce navigateur."); return; }
+    setLocating(true); setLocationError("");
+    navigator.geolocation.getCurrentPosition(async ({coords})=>{
+      const { latitude, longitude } = coords;
+      let loc: UserLocation={lat:latitude,lng:longitude,city:"Position GPS",district:"Position actuelle"};
+      try {
+        const [{data:place},{data:updatedUser}] = await Promise.all([
+          api.get("/geocode/reverse",{params:{lat:latitude,lng:longitude}}),
+          api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude}),
+        ]);
+        loc={lat:latitude,lng:longitude,city:place.city||"Position GPS",district:place.district||place.city||"Position actuelle"};
+        onLocationUpdate(loc,updatedUser);
+      } catch { setLocationError("La position a été obtenue, mais son enregistrement a échoué. Réessayez."); }
+      finally { setLocating(false); }
+    },()=>{setLocating(false);setLocationError("Autorisez l’accès à votre position dans le navigateur, puis réessayez.");},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   }
 
   return (
@@ -68,8 +90,8 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser }:
       <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center"><Wrench className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI Pro</span><Badge color="green">Technicien</Badge></div>
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">Ce mois</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">Revenus</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><div><div className="text-xs text-muted-foreground">Note moy.</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></div></div>
-          {location&&<div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 text-emerald-500"/>{location.city}</div>}
+          <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">Ce mois</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">Revenus</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><button onClick={()=>setRatingsOpen(true)} className="rounded-lg px-2 py-1 hover:bg-amber-50" title="Voir le détail des évaluations"><div className="text-xs text-muted-foreground">Note moy.</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></button></div>
+          <button onClick={refreshCurrentLocation} disabled={locating} className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 disabled:opacity-60" title="Actualiser avec ma position GPS actuelle"><Navigation className={`w-3 h-3 text-emerald-500 ${locating?"animate-pulse":""}`}/>{locating?"Localisation…":location?.district||location?.city||"Actualiser ma position"}</button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-emerald-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -83,17 +105,18 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser }:
         {tab==="messages"&&<ConversationsPanel/>}
         {tab==="tarifs"&&<TechTarifs city={user.city}/>}
         {tab==="agenda"&&<TechAgenda/>}
-        {tab==="reviews"&&<TechRatings technicianId={user.id}/>}
       </div>
       {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openTechNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&<ProfileModal user={user} role="technician" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
+      {ratingsOpen&&<TechRatings technicianId={user.id} onClose={()=>setRatingsOpen(false)}/>}
+      {locationError&&<div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg"><button onClick={()=>setLocationError("")} className="float-right ml-3"><X className="w-4 h-4"/></button>{locationError}</div>}
     </div>
   );
 }
 
 type TechnicianRating = { rating: number; comment: string | null; client_name: string; updated_at: string };
 
-function TechRatings({ technicianId }: { technicianId: number }) {
+function TechRatings({ technicianId, onClose }: { technicianId: number; onClose:()=>void }) {
   const [ratings, setRatings] = useState<TechnicianRating[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -110,8 +133,9 @@ function TechRatings({ technicianId }: { technicianId: number }) {
   const distribution = [5,4,3,2,1].map((score)=>({ score, count:ratings.filter((item)=>item.rating===score).length }));
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
-      <div className="mb-6"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Évaluations clients</h2><p className="text-sm text-muted-foreground">Consultez les notes et commentaires laissés par vos clients.</p></div>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={(event)=>{if(event.target===event.currentTarget)onClose();}}>
+    <div role="dialog" aria-modal="true" aria-labelledby="ratings-title" className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl bg-slate-50 p-4 md:p-6 shadow-2xl">
+      <div className="mb-6 flex items-start justify-between gap-3"><div><h2 id="ratings-title" className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Évaluations clients</h2><p className="text-sm text-muted-foreground">Notes et commentaires laissés par vos clients.</p></div><button onClick={onClose} className="w-9 h-9 rounded-xl bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50"><X className="w-4 h-4"/></button></div>
       {loading?<div className="py-16 text-center text-sm text-muted-foreground">Chargement des évaluations…</div>
       :error?<div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       :ratings.length===0?<div className="rounded-2xl border border-gray-100 bg-white p-10 text-center"><Star className="w-10 h-10 mx-auto text-gray-300 mb-3"/><div className="font-semibold">Aucune évaluation pour le moment</div><div className="text-sm text-muted-foreground mt-1">Les avis apparaîtront ici après les interventions évaluées par vos clients.</div></div>
@@ -122,6 +146,7 @@ function TechRatings({ technicianId }: { technicianId: number }) {
         </div>
         <div className="space-y-3">{ratings.map((item,index)=><article key={`${item.client_name}-${item.updated_at}-${index}`} className="rounded-2xl border border-gray-100 bg-white p-4"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-sm">{item.client_name}</div><div className="flex gap-0.5 mt-1">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=item.rating?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div></div><time className="text-xs text-muted-foreground">{new Date(item.updated_at).toLocaleDateString("fr-FR")}</time></div>{item.comment?<p className="mt-3 text-sm leading-relaxed text-slate-700">{item.comment}</p>:<p className="mt-3 text-xs italic text-muted-foreground">Aucun commentaire écrit.</p>}</article>)}</div>
       </>}
+    </div>
     </div>
   );
 }
