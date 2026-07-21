@@ -17,5 +17,5 @@ export function mapBlockedSlot(row: any): BlockedSlot {
 }
 
 export function mapLead(row: any): Lead {
-  return { id: row.id, client: row.client_name ?? row.client, problem: row.problem, price: Number(row.price ?? 0), confidence: Number(row.confidence ?? 0), time: row.time ?? new Date(row.created_at).toLocaleString("fr-FR"), status: row.status, city: row.city, faultType: row.fault_type, appointmentId: row.appointment_id == null ? undefined : Number(row.appointment_id), requestedDate: row.requested_date, requestedTime: row.requested_time, address: row.address };
+  return { id: row.id, client: row.client_name ?? row.client, problem: row.problem, price: Number(row.price ?? 0), currency: row.currency || "EUR", confidence: Number(row.confidence ?? 0), time: row.time ?? new Date(row.created_at).toLocaleString("fr-FR"), status: row.status, city: row.city, faultType: row.fault_type, appointmentId: row.appointment_id == null ? undefined : Number(row.appointment_id), requestedDate: row.requested_date, requestedTime: row.requested_time, address: row.address };
 }

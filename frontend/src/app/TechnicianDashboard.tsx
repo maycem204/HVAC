@@ -98,6 +98,7 @@ function TechLeads() {
   const [reassigning, setReassigning] = useState<number|null>(null);
   const [reassigned, setReassigned] = useState<Record<number,string>>({});
   const [reassignmentFailed, setReassignmentFailed] = useState<Set<number>>(new Set());
+  const [reassignmentErrors, setReassignmentErrors] = useState<Record<number,string>>({});
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<number|null>(null);
@@ -126,13 +127,15 @@ function TechLeads() {
 
   async function decline(id: number) {
     setReassigning(id);
+    setReassignmentErrors((current)=>{ const next={...current}; delete next[id]; return next; });
     try {
       const { data } = await api.post(`/leads/${id}/decline`);
       setLeads((ls)=>ls.map((l)=>l.id===id?{...l,status:"done"}:l));
       if (data.reassignedTo) setReassigned((r)=>({...r,[id]:data.reassignedTo}));
       else setReassignmentFailed((current)=>new Set(current).add(id));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setReassignmentErrors((current)=>({...current,[id]:err?.response?.data?.error || "Impossible de réaffecter cette demande pour le moment."}));
     } finally {
       setReassigning(null);
     }
@@ -156,9 +159,10 @@ function TechLeads() {
               {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} à {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
               <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">Confiance IA</div><ConfidenceBar value={lead.confidence}/></div>
               <button onClick={()=>setExpanded(expanded===lead.id?null:lead.id)} className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1">{expanded===lead.id?"Masquer les détails":"Voir toutes les informations"}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded===lead.id?"rotate-180":""}`}/></button>
-              {expanded===lead.id&&<div className="mt-3 grid sm:grid-cols-2 gap-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs"><div><span className="text-muted-foreground">Demande :</span> {lead.problem}</div><div><span className="text-muted-foreground">Catégorie :</span> {lead.faultType}</div><div><span className="text-muted-foreground">Créneau :</span> {lead.requestedDate?`${String(lead.requestedDate).slice(0,10)} ${String(lead.requestedTime||"").slice(0,5)}`:"À définir"}</div><div><span className="text-muted-foreground">Adresse :</span> {lead.address||lead.city||"Non renseignée"}</div><div><span className="text-muted-foreground">Estimation :</span> {lead.price} €</div><div><span className="text-muted-foreground">Statut :</span> {lead.status}</div></div>}
+              {expanded===lead.id&&<div className="mt-3 grid sm:grid-cols-2 gap-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs"><div><span className="text-muted-foreground">Demande :</span> {lead.problem}</div><div><span className="text-muted-foreground">Catégorie :</span> {lead.faultType}</div><div><span className="text-muted-foreground">Créneau :</span> {lead.requestedDate?`${String(lead.requestedDate).slice(0,10)} ${String(lead.requestedTime||"").slice(0,5)}`:"À définir"}</div><div><span className="text-muted-foreground">Adresse :</span> {lead.address||lead.city||"Non renseignée"}</div><div><span className="text-muted-foreground">Estimation :</span> {lead.price} {lead.currency}</div><div><span className="text-muted-foreground">Statut :</span> {lead.status}</div></div>}
               {reassigning===lead.id?<div className="mt-3 flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="w-4 h-4 animate-spin"/>Moteur IA recherche un autre technicien…</div>
               :reassigned[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4 shrink-0"/>Lead réassigné à <strong>{reassigned[lead.id]}</strong> sur le même créneau — client et nouveau technicien notifiés.</div>
+              :reassignmentErrors[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2"><AlertCircle className="w-4 h-4 shrink-0"/>{reassignmentErrors[lead.id]}</div>
               :reassignmentFailed.has(lead.id)?<div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2"><AlertCircle className="w-4 h-4 shrink-0"/>Aucun technicien compatible n’est disponible sur ce créneau — client notifié.</div>
               :(
                 <div className="flex items-center gap-2 mt-3">
@@ -490,4 +494,3 @@ function BlockSlotModal({ onClose, onSave }: { onClose: ()=>void; onSave: (b: Om
 }
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
-
