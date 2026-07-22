@@ -82,9 +82,10 @@ router.get("/availability/suggestions", auth, requireRole("client"), async (req,
     for (let offset = requestedDate ? 0 : urgency === "normal" ? 1 : 0; offset <= (requestedDate ? 0 : horizon); offset += 1) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
       const date = requestedDate || `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-      const hours = requestedPeriod === "morning" ? [8, 10, 12]
-        : requestedPeriod === "afternoon" ? [14, 16]
-          : requestedPeriod === "evening" ? [18] : [8, 10, 12, 14, 16, 18];
+      const hours = requestedPeriod === "morning" ? [6,7,8,9,10,11]
+        : requestedPeriod === "afternoon" ? [12,13,14,15,16,17]
+          : requestedPeriod === "evening" ? [18,19,20,21]
+            : Array.from({ length:16 }, (_,index)=>index+6);
       for (const hour of hours) {
         if (date === today && hour <= now.getHours() + 1) continue;
         const time = `${String(hour).padStart(2, "0")}:00`;
@@ -303,6 +304,57 @@ router.get("/blocked-slots", auth, requireRole("technician"), async (req, res) =
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.get("/working-hours", auth, requireRole("technician"), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT week_day, enabled, start_time, end_time
+       FROM technician_working_hours WHERE technician_id = $1 ORDER BY week_day`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/working-hours", auth, requireRole("technician"), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const hours = req.body?.hours;
+    if (!Array.isArray(hours) || hours.length !== 7) return res.status(400).json({ error: "Les sept jours de la semaine sont requis" });
+    const normalized = hours.map((item) => ({
+      weekDay: Number(item.weekDay),
+      enabled: Boolean(item.enabled),
+      startTime: String(item.startTime || "").slice(0, 5),
+      endTime: String(item.endTime || "").slice(0, 5),
+    }));
+    const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+    if (new Set(normalized.map((item) => item.weekDay)).size !== 7
+      || normalized.some((item) => item.weekDay < 0 || item.weekDay > 6 || !validTime(item.startTime) || !validTime(item.endTime) || item.startTime >= item.endTime)) {
+      return res.status(400).json({ error: "Horaires hebdomadaires invalides" });
+    }
+    await client.query("BEGIN");
+    for (const item of normalized) {
+      await client.query(
+        `INSERT INTO technician_working_hours (technician_id, week_day, enabled, start_time, end_time)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (technician_id, week_day) DO UPDATE
+         SET enabled=EXCLUDED.enabled, start_time=EXCLUDED.start_time, end_time=EXCLUDED.end_time`,
+        [req.user.id, item.weekDay, item.enabled, item.startTime, item.endTime]
+      );
+    }
+    await client.query("COMMIT");
+    const result = await pool.query(
+      `SELECT week_day, enabled, start_time, end_time FROM technician_working_hours
+       WHERE technician_id=$1 ORDER BY week_day`, [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
 });
 
 router.post("/blocked-slots", auth, requireRole("technician"), async (req, res) => {

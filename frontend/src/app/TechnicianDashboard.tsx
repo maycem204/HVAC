@@ -17,7 +17,7 @@ import { useSpeechRecognition } from "../features/chatbot/useSpeechRecognition";
 import type {
   AppUser, Appointment, BlockedSlot, ChatMsg, ClientTab, Lead, Notification,
   PriceDecision, PriceItem, Role, SuggestedSlot, Technician, TechTab,
-  UserLocation, View,
+  UserLocation, View, WorkingHour,
 } from "./domain";
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { Avatar, Badge, ConfidenceBar, NotificationPanel, ProfileModal } from "./SharedUi";
@@ -393,6 +393,8 @@ function TechTarifs({ city }: { city: string }) {
 
 const DAY_NAMES = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
 const WEEK_DAYS_FR = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+const DEFAULT_WORKING_HOURS: WorkingHour[] = WEEK_DAYS_FR.map((_,weekDay)=>({weekDay,enabled:weekDay<6,startTime:weekDay===5?"09:00":"08:00",endTime:weekDay===5?"14:00":"18:00"}));
+const mapWorkingHour = (row: any): WorkingHour => ({weekDay:Number(row.week_day??row.weekDay),enabled:Boolean(row.enabled),startTime:String(row.start_time??row.startTime).slice(0,5),endTime:String(row.end_time??row.endTime).slice(0,5)});
 
 function TechAgenda() {
   const today = new Date();
@@ -400,6 +402,8 @@ function TechAgenda() {
   const [selectedDay, setSelectedDay] = useState(today.getDate());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
+  const [workingHours, setWorkingHours] = useState<WorkingHour[]>(DEFAULT_WORKING_HOURS);
+  const [showHoursModal, setShowHoursModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appointment|null>(null);
@@ -414,6 +418,7 @@ function TechAgenda() {
   useEffect(() => {
     refreshAppointments();
     api.get("/blocked-slots").then((res) => setBlockedSlots(res.data.map(mapBlockedSlot))).catch(console.error);
+    api.get("/working-hours").then((res)=>setWorkingHours(res.data.map(mapWorkingHour))).catch(console.error);
     const socket = realtimeSocket();
     if (!socket) return;
     socket.on("appointment:new", refreshAppointments);
@@ -448,7 +453,12 @@ function TechAgenda() {
   function isFullyBlockedDay(day: number) {
     return blocksForDay(day).some((block)=>block.startTime?.slice(0,5)==="00:00" && ["23:59","00:00"].includes(block.endTime?.slice(0,5)));
   }
+  function hoursForDay(day: number) {
+    const dow=(new Date(year,month,day).getDay()+6)%7;
+    return workingHours.find((item)=>item.weekDay===dow);
+  }
   function dayColor(day: number) {
+    if(hoursForDay(day)?.enabled===false) return "bg-gray-100 border-gray-300 text-gray-400";
     if(isFullyBlockedDay(day)) return "bg-gray-100 border-gray-300 text-gray-400";
     if(blocksForDay(day).length) return "bg-amber-50 border-amber-300 text-amber-800 hover:border-amber-400";
     const apts=apptForDay(day);
@@ -485,6 +495,12 @@ function TechAgenda() {
     try { await api.delete(`/blocked-slots/${id}`); } catch (err) { console.error(err); }
   }
 
+  async function saveWorkingHours(hours: WorkingHour[]) {
+    const { data } = await api.put("/working-hours", { hours });
+    setWorkingHours(data.map(mapWorkingHour));
+    setShowHoursModal(false);
+  }
+
   function callClient(appt: Appointment) {
     if (!appt.clientPhone) {
       alert("Aucun numéro de téléphone enregistré pour ce client.");
@@ -512,6 +528,10 @@ function TechAgenda() {
       <div className="grid md:grid-cols-[380px_1fr] gap-6">
         <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3"><div><div className="text-sm font-semibold">Horaires habituels</div><div className="text-xs text-muted-foreground mt-0.5">Votre semaine de travail récurrente</div></div><button onClick={()=>setShowHoursModal(true)} className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-emerald-50 text-emerald-700 text-xs hover:bg-emerald-100"><Clock className="w-3 h-3"/>Modifier</button></div>
+            <div className="space-y-1.5">{workingHours.map((item)=><div key={item.weekDay} className="flex items-center justify-between text-xs"><span className="text-slate-600">{WEEK_DAYS_FR[item.weekDay]}</span>{item.enabled?<span className="font-medium text-emerald-700">{item.startTime}–{item.endTime}</span>:<span className="text-muted-foreground">Fermé</span>}</div>)}</div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <div className="flex items-center justify-between mb-4"><h3 className="font-bold capitalize" style={{ fontFamily:"Onest,sans-serif" }}>{currentMonth.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}</h3><div className="flex gap-1"><button onClick={()=>changeMonth(-1)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground hover:bg-gray-50"><ChevronLeft className="w-4 h-4"/></button><button onClick={()=>changeMonth(1)} className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-muted-foreground hover:bg-gray-50"><ChevronRight className="w-4 h-4"/></button></div></div>
             <div className="grid grid-cols-7 gap-1 mb-1">{DAY_NAMES.map((d,i)=><div key={i} className="text-center text-xs font-medium text-muted-foreground py-1">{d}</div>)}</div>
             <div className="grid grid-cols-7 gap-1">{calDays.map((day,i)=>{
@@ -522,7 +542,7 @@ function TechAgenda() {
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">{[["bg-emerald-100 border-emerald-400","Terminé"],["bg-blue-100 border-blue-400","Prévu"],["bg-gray-100 border-gray-300","Indisponible"]].map(([cls,l])=><div key={l} className="flex items-center gap-2 text-xs"><div className={`w-4 h-4 rounded border ${cls}`}/><span className="text-muted-foreground">{l}</span></div>)}</div>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold">Indisponibilités</div><button onClick={()=>setShowBlockModal(true)} className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200"><Plus className="w-3 h-3"/>Ajouter</button></div>
+            <div className="flex items-center justify-between mb-3"><div><div className="text-sm font-semibold">Exceptions et absences</div><div className="text-xs text-muted-foreground mt-0.5">Congés, formation ou absence ponctuelle</div></div><button onClick={()=>setShowBlockModal(true)} className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200"><Plus className="w-3 h-3"/>Ajouter</button></div>
             <div className="space-y-2">
               {blockedSlots.map((b)=><div key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100"><BanIcon className="w-4 h-4 text-gray-400 shrink-0"/><div className="flex-1 min-w-0"><div className="text-xs font-medium truncate">{b.label}</div><div className="text-xs text-muted-foreground">{b.type==="daily"?`Tous les jours ${b.startTime}–${b.endTime}`:b.type==="weekly"?`${b.weekDays?.map((d)=>WEEK_DAYS_FR[d]).join(", ")}`:b.date}</div></div><button onClick={()=>removeBlockedSlot(b.id)} className="text-muted-foreground hover:text-red-500"><X className="w-3.5 h-3.5"/></button></div>)}
               {blockedSlots.length===0&&<div className="text-xs text-muted-foreground text-center py-2">Aucune indisponibilité</div>}
@@ -530,7 +550,7 @@ function TechAgenda() {
           </div>
         </div>
         <div>
-          <div className="mb-4"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{new Date(year,month,selectedDay).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</h2><p className="text-sm text-muted-foreground">{dayApts.length} rendez-vous · {blocksForDay(selectedDay).length} indisponibilité(s)</p></div>
+          <div className="mb-4"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{new Date(year,month,selectedDay).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</h2><p className="text-sm text-muted-foreground">{dayApts.length} rendez-vous · {hoursForDay(selectedDay)?.enabled?`disponible ${hoursForDay(selectedDay)?.startTime}–${hoursForDay(selectedDay)?.endTime}`:"journée non travaillée"}</p></div>
           {blocksForDay(selectedDay).length>0&&<div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-start gap-3 text-sm text-amber-800"><BanIcon className="w-5 h-5 shrink-0"/><div><strong>Créneaux bloqués :</strong> {blocksForDay(selectedDay).map((block)=>`${block.startTime.slice(0,5)}–${block.endTime.slice(0,5)}`).join(", ")}. Le reste de la journée demeure disponible.</div></div>}
           {dayApts.length===0?<div className="bg-white rounded-xl border border-gray-100 p-12 text-center shadow-sm"><Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40"/><div className="text-sm text-muted-foreground">Aucun rendez-vous ce jour</div></div>:(
             <div className="space-y-3">{dayApts.map((appt)=>{ const s=ss[appt.status]; return (
@@ -554,6 +574,7 @@ function TechAgenda() {
         </div>
       </div>
       {showBlockModal&&<BlockSlotModal onClose={()=>setShowBlockModal(false)} onSave={addBlockedSlot}/>}
+      {showHoursModal&&<WorkingHoursModal initialHours={workingHours} onClose={()=>setShowHoursModal(false)} onSave={saveWorkingHours}/>}
       {showPriceModal&&selectedAppt&&(
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
@@ -571,20 +592,45 @@ function TechAgenda() {
   );
 }
 
+// ─── Working Hours Modal ──────────────────────────────────────────────────────
+
+function WorkingHoursModal({ initialHours, onClose, onSave }: { initialHours:WorkingHour[]; onClose:()=>void; onSave:(hours:WorkingHour[])=>Promise<void> }) {
+  const [hours,setHours]=useState<WorkingHour[]>(()=>DEFAULT_WORKING_HOURS.map((fallback)=>initialHours.find((item)=>item.weekDay===fallback.weekDay)||fallback));
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState("");
+  function update(weekDay:number, values:Partial<WorkingHour>){setHours((items)=>items.map((item)=>item.weekDay===weekDay?{...item,...values}:item));}
+  async function submit(){
+    if(hours.some((item)=>item.enabled&&item.startTime>=item.endTime)){setError("L’heure de fin doit être après l’heure de début.");return;}
+    setSaving(true);setError("");
+    try { await onSave(hours); } catch (err:any) { setError(err?.response?.data?.error||"Impossible d’enregistrer les horaires."); setSaving(false); }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl" onClick={(event)=>event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 mb-5"><div><h3 className="text-lg font-bold" style={{fontFamily:"Onest,sans-serif"}}>Horaires habituels</h3><p className="text-xs text-muted-foreground mt-1">Les clients ne pourront réserver que dans ces plages. Une intervention dure actuellement 2 heures.</p></div><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
+        <div className="space-y-2">{hours.map((item)=><div key={item.weekDay} className={`grid grid-cols-[110px_1fr] sm:grid-cols-[120px_1fr] gap-3 items-center rounded-xl border p-3 ${item.enabled?"border-emerald-100 bg-emerald-50/40":"border-gray-100 bg-gray-50"}`}>
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={item.enabled} onChange={(event)=>update(item.weekDay,{enabled:event.target.checked})} className="accent-emerald-600"/>{WEEK_DAYS_FR[item.weekDay]}</label>
+          {item.enabled?<div className="flex items-center gap-2"><input aria-label={`Début ${WEEK_DAYS_FR[item.weekDay]}`} type="time" value={item.startTime} onChange={(event)=>update(item.weekDay,{startTime:event.target.value})} className="min-w-0 w-full h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm"/><span className="text-muted-foreground">à</span><input aria-label={`Fin ${WEEK_DAYS_FR[item.weekDay]}`} type="time" value={item.endTime} onChange={(event)=>update(item.weekDay,{endTime:event.target.value})} className="min-w-0 w-full h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm"/></div>:<div className="text-xs text-muted-foreground">Journée non travaillée</div>}
+        </div>)}</div>
+        {error&&<div className="mt-3 rounded-lg bg-red-50 border border-red-100 p-2.5 text-xs text-red-600">{error}</div>}
+        <div className="flex gap-2 mt-5"><button onClick={submit} disabled={saving} className="flex-1 h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">{saving?"Enregistrement…":"Enregistrer les horaires"}</button><button onClick={onClose} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">Annuler</button></div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Block Slot Modal ─────────────────────────────────────────────────────────
 
 function BlockSlotModal({ onClose, onSave }: { onClose: ()=>void; onSave: (b: Omit<BlockedSlot,"id">)=>void }) {
-  const [type, setType] = useState<"specific"|"daily"|"weekly">("daily");
+  const [type, setType] = useState<"specific"|"daily"|"weekly">("specific");
   const [date, setDate] = useState(""); const [weekDays, setWeekDays] = useState<number[]>([]);
-  const [startTime, setStartTime] = useState("20:00"); const [endTime, setEndTime] = useState("08:00"); const [label, setLabel] = useState("");
-  const quick = [{label:"Nuit (20h–8h)",type:"daily" as const,startTime:"20:00",endTime:"08:00"},{label:"Week-end",type:"weekly" as const,weekDays:[5,6],startTime:"00:00",endTime:"23:59"},{label:"Vendredi PM",type:"weekly" as const,weekDays:[4],startTime:"12:00",endTime:"18:00"}];
+  const [startTime, setStartTime] = useState("08:00"); const [endTime, setEndTime] = useState("18:00"); const [label, setLabel] = useState("");
   function toggleDay(d: number){setWeekDays((p)=>p.includes(d)?p.filter((x)=>x!==d):[...p,d]);}
   function submit(){onSave({type,date:type==="specific"?date:undefined,weekDays:type==="weekly"?weekDays:undefined,startTime,endTime,label:label||(type==="daily"?`Nuit ${startTime}–${endTime}`:type==="weekly"?"Indisponible":date)} as Omit<BlockedSlot,"id">);}
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e)=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-bold" style={{ fontFamily:"Onest,sans-serif" }}>Bloquer un créneau</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
-        <div className="mb-4"><div className="text-xs font-medium text-muted-foreground mb-2">Raccourcis rapides</div><div className="flex flex-wrap gap-2">{quick.map((q)=><button key={q.label} onClick={()=>{setType(q.type);if((q as any).weekDays)setWeekDays((q as any).weekDays);setStartTime(q.startTime);setEndTime(q.endTime);setLabel(q.label);}} className="px-3 py-1.5 rounded-full border border-gray-200 text-xs hover:border-blue-400 hover:bg-blue-50">{q.label}</button>)}</div></div>
         <div className="space-y-4">
           <div><label className="block text-xs font-medium mb-2">Type</label><div className="grid grid-cols-3 gap-2">{([["specific","Date précise"],["daily","Tous les jours"],["weekly","Jours semaine"]] as const).map(([v,l])=><button key={v} onClick={()=>setType(v)} className={`py-2 px-3 rounded-lg border text-xs font-medium ${type===v?"border-blue-400 bg-blue-50 text-blue-700":"border-gray-200 text-muted-foreground"}`}>{l}</button>)}</div></div>
           {type==="specific"&&<div><label className="block text-xs font-medium mb-1.5">Date</label><input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>}

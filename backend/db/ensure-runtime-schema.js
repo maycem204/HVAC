@@ -26,6 +26,25 @@ async function ensureRuntimeSchema(pool) {
       ADD COLUMN IF NOT EXISTS diagnostic_details JSONB
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS technician_working_hours (
+      technician_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      week_day SMALLINT NOT NULL CHECK (week_day BETWEEN 0 AND 6),
+      enabled BOOLEAN NOT NULL DEFAULT true,
+      start_time TIME NOT NULL,
+      end_time TIME NOT NULL,
+      PRIMARY KEY (technician_id, week_day),
+      CHECK (start_time < end_time)
+    );
+    INSERT INTO technician_working_hours (technician_id, week_day, enabled, start_time, end_time)
+    SELECT u.id, day,
+           day < 6,
+           CASE WHEN day = 5 THEN '09:00'::time ELSE '08:00'::time END,
+           CASE WHEN day = 5 THEN '14:00'::time ELSE '18:00'::time END
+    FROM users u CROSS JOIN generate_series(0, 6) AS day
+    WHERE u.role = 'technician'
+    ON CONFLICT (technician_id, week_day) DO NOTHING;
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS pricing_fallback_requests (
       id BIGSERIAL PRIMARY KEY,
       client_id INTEGER REFERENCES users(id) ON DELETE SET NULL,

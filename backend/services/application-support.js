@@ -120,6 +120,20 @@ function createApplicationSupport(pool) {
     const blocks = await pool.query(`SELECT * FROM blocked_slots WHERE technician_id = $1`, [technicianId]);
     const requested = new Date(`${date}T00:00:00`);
     const dow = (requested.getDay() + 6) % 7;
+    const schedule = await pool.query(
+      `SELECT enabled, start_time, end_time
+       FROM technician_working_hours WHERE technician_id = $1 AND week_day = $2`,
+      [technicianId, dow]
+    );
+    const workingHours = schedule.rows[0];
+    if (workingHours) {
+      const workStart = minutesOf(workingHours.start_time);
+      const workEnd = minutesOf(workingHours.end_time);
+      if (!workingHours.enabled || requestedMinute == null || workStart == null || workEnd == null
+        || requestedMinute < workStart || requestedMinute + 120 > workEnd) {
+        return { available: false, reason: "Ce créneau est en dehors des horaires de travail du technicien." };
+      }
+    }
     const blocked = blocks.rows.some((slot) => {
       const applies = (slot.type === "specific" && String(slot.date).slice(0, 10) === date)
         || (slot.type === "weekly" && (slot.week_days || []).includes(dow)) || slot.type === "daily";

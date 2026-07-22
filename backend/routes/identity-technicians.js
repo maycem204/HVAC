@@ -63,6 +63,15 @@ router.post("/register", authLimiter, async (req, res) => {
          ON CONFLICT (user_id) DO NOTHING`,
         [user.id]
       );
+      await pool.query(
+        `INSERT INTO technician_working_hours (technician_id, week_day, enabled, start_time, end_time)
+         SELECT $1, day, day < 6,
+                CASE WHEN day = 5 THEN '09:00'::time ELSE '08:00'::time END,
+                CASE WHEN day = 5 THEN '14:00'::time ELSE '18:00'::time END
+         FROM generate_series(0, 6) AS day
+         ON CONFLICT (technician_id, week_day) DO NOTHING`,
+        [user.id]
+      );
     }
     const token = signToken(user);
     setAuthCookie(res, token);

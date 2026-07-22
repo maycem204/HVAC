@@ -110,6 +110,16 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMP DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS technician_working_hours (
+  technician_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  week_day SMALLINT NOT NULL CHECK (week_day BETWEEN 0 AND 6),
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  PRIMARY KEY (technician_id, week_day),
+  CHECK (start_time < end_time)
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
   id BIGSERIAL PRIMARY KEY,
   client_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
