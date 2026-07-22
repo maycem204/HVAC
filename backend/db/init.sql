@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS leads (
   confidence INT,
   status VARCHAR(20) DEFAULT 'new', -- new, accepted, done
   city VARCHAR(80),
+  diagnostic_details JSONB,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   address TEXT,
   duration VARCHAR(20),
   case_description TEXT,
+  diagnostic_details JSONB,
   client_confirmed_price BOOLEAN DEFAULT false,
   rating INT,
   feedback TEXT

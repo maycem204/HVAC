@@ -3,7 +3,9 @@
 async function ensureRuntimeSchema(pool) {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country_code VARCHAR(2), ADD COLUMN IF NOT EXISTS currency VARCHAR(3)`);
   await pool.query(`
-    ALTER TABLE appointments ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'EUR';
+    ALTER TABLE appointments
+      ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'EUR',
+      ADD COLUMN IF NOT EXISTS diagnostic_details JSONB;
     UPDATE appointments a SET currency=u.currency FROM users u
     WHERE u.id=a.technician_id AND u.currency IS NOT NULL AND (a.currency IS NULL OR a.currency='EUR');
   `);
@@ -20,7 +22,8 @@ async function ensureRuntimeSchema(pool) {
       ADD COLUMN IF NOT EXISTS requested_date DATE,
       ADD COLUMN IF NOT EXISTS requested_time TIME,
       ADD COLUMN IF NOT EXISTS address TEXT,
-      ADD COLUMN IF NOT EXISTS appointment_id INT REFERENCES appointments(id)
+      ADD COLUMN IF NOT EXISTS appointment_id INT REFERENCES appointments(id),
+      ADD COLUMN IF NOT EXISTS diagnostic_details JSONB
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS pricing_fallback_requests (

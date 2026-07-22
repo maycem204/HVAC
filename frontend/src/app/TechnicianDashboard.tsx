@@ -160,6 +160,43 @@ function TechRatings({ technicianId, onClose }: { technicianId: number; onClose:
 
 // ─── Tech Leads ───────────────────────────────────────────────────────────────
 
+function LeadDetails({ lead }: { lead: Lead }) {
+  const details = lead.diagnosticDetails;
+  const faults = details?.faults || [];
+  const statusLabel = lead.status === "new" ? "Nouveau" : lead.status === "accepted" ? "Accepté" : "Clôturé";
+  const age = details?.equipment_age_years != null ? `${details.equipment_age_years} an(s)` : details?.equipment_age_band;
+  return (
+    <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 p-4 text-xs space-y-4">
+      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+        <div><span className="text-muted-foreground">Demande :</span> {lead.problem}</div>
+        <div><span className="text-muted-foreground">Catégorie :</span> {lead.faultType}</div>
+        <div><span className="text-muted-foreground">Créneau :</span> {lead.requestedDate?`${String(lead.requestedDate).slice(0,10)} à ${String(lead.requestedTime||"").slice(0,5)}`:"À définir"}</div>
+        <div><span className="text-muted-foreground">Adresse :</span> {lead.address||lead.city||"Non renseignée"}</div>
+        <div><span className="text-muted-foreground">Estimation :</span> <strong>{lead.price.toLocaleString("fr-FR")} {lead.currency}</strong></div>
+        <div><span className="text-muted-foreground">Statut :</span> {statusLabel}</div>
+      </div>
+      {lead.caseDescription&&<div className="rounded-lg border border-blue-100 bg-white p-3"><div className="font-semibold text-slate-700 mb-1">Description donnée par le client</div><p className="whitespace-pre-line leading-relaxed text-slate-600">{lead.caseDescription}</p></div>}
+      {details&&<div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        <div><span className="text-muted-foreground">Urgence :</span> {details.urgency||"Non précisée"}</div>
+        <div><span className="text-muted-foreground">Complexité :</span> {details.complexity||"Non précisée"}</div>
+        <div><span className="text-muted-foreground">Marque :</span> {details.brand||"Non indiquée"}</div>
+        <div><span className="text-muted-foreground">Âge équipement :</span> {age||"Non indiqué"}</div>
+        <div><span className="text-muted-foreground">Pays :</span> {details.country||"Non précisé"}</div>
+        <div><span className="text-muted-foreground">Contexte saisonnier :</span> {details.season||"Non précisé"}</div>
+      </div>}
+      {faults.length>0&&<div className="space-y-2"><div className="font-semibold text-slate-700">Détail de la panne analysée</div>{faults.map((fault,index)=><div key={index} className="rounded-lg border border-slate-200 bg-white p-3 grid sm:grid-cols-2 gap-2">
+        <div className="sm:col-span-2"><span className="text-muted-foreground">Symptôme / panne :</span> <strong>{fault.description||"Non précisé"}</strong></div>
+        <div><span className="text-muted-foreground">Équipement :</span> {fault.equipment_type||"Non précisé"}</div>
+        <div><span className="text-muted-foreground">Intervention prévue :</span> {fault.intervention_type||"À diagnostiquer"}</div>
+        <div><span className="text-muted-foreground">Complexité :</span> {fault.complexity||details?.complexity||"Non précisée"}</div>
+        <div><span className="text-muted-foreground">Référence :</span> {fault.code_hint||"Non attribuée"}</div>
+        {fault.complexity_reason&&<div className="sm:col-span-2"><span className="text-muted-foreground">Justification :</span> {fault.complexity_reason}</div>}
+      </div>)}</div>}
+      {!lead.caseDescription&&!details&&<div className="text-muted-foreground italic">Les détails de diagnostic ne sont pas disponibles pour cette ancienne demande.</div>}
+    </div>
+  );
+}
+
 function TechLeads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filter, setFilter] = useState<"all"|"new"|"accepted"|"done">("all");
@@ -188,8 +225,8 @@ function TechLeads() {
 
   async function accept(id: number) {
     try {
-      const { data } = await api.patch(`/leads/${id}`, { status: "accepted" });
-      setLeads((ls)=>ls.map((l)=>l.id===id?mapLead(data):l));
+      await api.patch(`/leads/${id}`, { status: "accepted" });
+      refreshLeads();
     } catch (err) { console.error(err); }
   }
 
@@ -222,12 +259,12 @@ function TechLeads() {
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{lead.client[0]}</div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price} €</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
+              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price.toLocaleString("fr-FR")} {lead.currency}</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
               <div className="mt-2 text-sm">{lead.problem}</div>
               {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} à {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
               <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">Confiance IA</div><ConfidenceBar value={lead.confidence}/></div>
               <button onClick={()=>setExpanded(expanded===lead.id?null:lead.id)} className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1">{expanded===lead.id?"Masquer les détails":"Voir toutes les informations"}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded===lead.id?"rotate-180":""}`}/></button>
-              {expanded===lead.id&&<div className="mt-3 grid sm:grid-cols-2 gap-2 rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs"><div><span className="text-muted-foreground">Demande :</span> {lead.problem}</div><div><span className="text-muted-foreground">Catégorie :</span> {lead.faultType}</div><div><span className="text-muted-foreground">Créneau :</span> {lead.requestedDate?`${String(lead.requestedDate).slice(0,10)} ${String(lead.requestedTime||"").slice(0,5)}`:"À définir"}</div><div><span className="text-muted-foreground">Adresse :</span> {lead.address||lead.city||"Non renseignée"}</div><div><span className="text-muted-foreground">Estimation :</span> {lead.price} {lead.currency}</div><div><span className="text-muted-foreground">Statut :</span> {lead.status}</div></div>}
+              {expanded===lead.id&&<LeadDetails lead={lead}/>}
               {reassigning===lead.id?<div className="mt-3 flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="w-4 h-4 animate-spin"/>Moteur IA recherche un autre technicien…</div>
               :reassigned[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4 shrink-0"/>Lead réassigné à <strong>{reassigned[lead.id]}</strong> sur le même créneau — client et nouveau technicien notifiés.</div>
               :reassignmentErrors[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2"><AlertCircle className="w-4 h-4 shrink-0"/>{reassignmentErrors[lead.id]}</div>

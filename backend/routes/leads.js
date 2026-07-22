@@ -33,12 +33,14 @@ router.get("/leads", auth, requireRole("technician"), async (req, res) => {
               COALESCE(l.requested_time, a.time) AS requested_time,
               COALESCE(l.address, a.address, cu.address) AS address,
               COALESCE(l.appointment_id, a.id) AS appointment_id,
-              COALESCE(a.currency, cu.currency, tu.currency, 'EUR') AS currency
+              COALESCE(a.currency, cu.currency, tu.currency, 'EUR') AS currency,
+              COALESCE(l.diagnostic_details, a.diagnostic_details, qa.extraction) AS diagnostic_details,
+              COALESCE(a.case_description, qa.request_text) AS case_description
        FROM leads l
        LEFT JOIN users cu ON cu.id = l.client_id
        LEFT JOIN users tu ON tu.id = l.technician_id
        LEFT JOIN LATERAL (
-         SELECT candidate.id, candidate.date, candidate.time, candidate.address, candidate.currency
+         SELECT candidate.id, candidate.date, candidate.time, candidate.address, candidate.currency, candidate.case_description, candidate.diagnostic_details
          FROM appointments candidate
          WHERE candidate.id = l.appointment_id
             OR (l.appointment_id IS NULL
@@ -49,6 +51,15 @@ router.get("/leads", auth, requireRole("technician"), async (req, res) => {
          ORDER BY (candidate.id = l.appointment_id) DESC, candidate.date DESC, candidate.time DESC
          LIMIT 1
        ) a ON true
+       LEFT JOIN LATERAL (
+         SELECT audit.extraction, audit.request_text
+         FROM pricing_quote_audits audit
+         WHERE audit.client_id = l.client_id
+           AND audit.created_at <= l.created_at
+           AND audit.created_at >= l.created_at - INTERVAL '2 hours'
+         ORDER BY audit.created_at DESC
+         LIMIT 1
+       ) qa ON true
        WHERE l.technician_id = $1
        ORDER BY l.created_at DESC`,
       [req.user.id]

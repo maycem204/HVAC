@@ -103,6 +103,13 @@ router.post("/appointments", auth, requireRole("client"), async (req, res) => {
   const client = await pool.connect();
   try {
     const { technicianId, date, time, service, faultType, estimatedPrice, address } = req.body;
+    const caseDescription = typeof req.body.caseDescription === "string" ? req.body.caseDescription.trim().slice(0, 5000) : null;
+    const diagnosticDetails = req.body.diagnosticDetails && typeof req.body.diagnosticDetails === "object" && !Array.isArray(req.body.diagnosticDetails)
+      ? req.body.diagnosticDetails : null;
+    if (diagnosticDetails && JSON.stringify(diagnosticDetails).length > 20000) {
+      return res.status(400).json({ error: "Les détails du diagnostic sont trop volumineux" });
+    }
+    const confidence = Math.max(0, Math.min(100, Math.round(Number(req.body.confidence) || 0)));
     if (!Number.isInteger(Number(technicianId)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) || !/^\d{2}:\d{2}/.test(String(time || ""))) {
       return res.status(400).json({ error: "Technicien, date ou heure invalide" });
     }
@@ -117,19 +124,19 @@ router.post("/appointments", auth, requireRole("client"), async (req, res) => {
     const bookingAddress = address || clientProfile.rows[0]?.address || null;
     await client.query("BEGIN");
     const result = await client.query(
-      `INSERT INTO appointments (client_id, technician_id, date, time, service, fault_type, estimated_price, status, address, duration, currency)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, '2h', $9)
+      `INSERT INTO appointments (client_id, technician_id, date, time, service, fault_type, estimated_price, status, address, duration, currency, case_description, diagnostic_details)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, '2h', $9, $10, $11)
        RETURNING *`,
-      [req.user.id, technicianId, date, time, service, faultType, estimatedPrice || 0, bookingAddress, String(req.body.currency || technician.rows[0].currency || "EUR").slice(0,3).toUpperCase()]
+      [req.user.id, technicianId, date, time, service, faultType, estimatedPrice || 0, bookingAddress, String(req.body.currency || technician.rows[0].currency || "EUR").slice(0,3).toUpperCase(), caseDescription, diagnosticDetails]
     );
     const lead = await client.query(
-      `INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city, requested_date, requested_time, address, appointment_id)
-       VALUES ($1,$2,$3,$4,$5,100,'new',$6,$7,$8,$9,$10)
+      `INSERT INTO leads (client_id, technician_id, problem, fault_type, price, confidence, status, city, requested_date, requested_time, address, appointment_id, diagnostic_details)
+       VALUES ($1,$2,$3,$4,$5,$6,'new',$7,$8,$9,$10,$11,$12)
        ON CONFLICT (appointment_id) WHERE appointment_id IS NOT NULL
-       DO UPDATE SET status='new', requested_date=EXCLUDED.requested_date, requested_time=EXCLUDED.requested_time
+       DO UPDATE SET status='new', requested_date=EXCLUDED.requested_date, requested_time=EXCLUDED.requested_time, diagnostic_details=EXCLUDED.diagnostic_details
        RETURNING *`,
-      [req.user.id, technicianId, service || `Rendez-vous ${faultType || "HVAC"}`, faultType || "Climatisation", estimatedPrice || 0,
-        clientProfile.rows[0]?.city || null, date, time, bookingAddress, result.rows[0].id]
+      [req.user.id, technicianId, service || `Rendez-vous ${faultType || "HVAC"}`, faultType || "Climatisation", estimatedPrice || 0, confidence,
+        clientProfile.rows[0]?.city || null, date, time, bookingAddress, result.rows[0].id, diagnosticDetails]
     );
     const notification = await client.query(
       `INSERT INTO notifications (user_id, type, title, message)

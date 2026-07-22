@@ -226,6 +226,9 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         faultType,
         estimatedPrice: quote?.price ?? 0,
         currency: quote?.currency || "EUR",
+        confidence: quote?.conf ?? 0,
+        caseDescription: messages.filter((message)=>message.role==="user" && !/j'accepte ce prix/i.test(message.text)).map((message)=>message.text).join("\n"),
+        diagnosticDetails: quote?.extraction || null,
       });
       onAppointmentCreated(mapAppointment(data));
       setBooked(true); setShowSlots(false);
