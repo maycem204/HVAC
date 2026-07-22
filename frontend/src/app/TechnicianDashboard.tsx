@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
 import {
   MessageSquare, Calendar, MapPin, Star, Send, ChevronRight, LogOut, Zap,
@@ -24,7 +25,10 @@ import { Avatar, Badge, ConfidenceBar, NotificationPanel, ProfileModal } from ".
 
 export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocationUpdate }:
   { user: AppUser; location: UserLocation|null; onLogout: ()=>void; onUpdateUser: (u: AppUser)=>void; onLocationUpdate: (loc:UserLocation,u:AppUser)=>void }) {
-  const [tab, setTab] = useState<TechTab>("leads");
+  const navigate = useNavigate();
+  const { tab: tabParam } = useParams();
+  const validTabs: TechTab[] = ["leads", "messages", "tarifs", "agenda"];
+  const tab: TechTab = validTabs.includes(tabParam as TechTab) ? tabParam as TechTab : "leads";
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
@@ -34,6 +38,10 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
   const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
+
+  useEffect(() => {
+    if (tabParam !== tab) navigate(`/technicien/${tab}`, { replace:true });
+  }, [navigate, tab, tabParam]);
 
   useEffect(() => {
     api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
@@ -64,7 +72,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
     markRead(notification.id);
     if (notification.type === "rating") { setRatingsOpen(true); setNotifOpen(false); return; }
     const target: TechTab = notification.type === "message" ? "messages" : notification.type === "lead" || notification.type === "reassign" ? "leads" : notification.type === "rdv" || notification.type === "price" ? "agenda" : "leads";
-    setTab(target); setNotifOpen(false);
+    navigate(`/technicien/${target}`); setNotifOpen(false);
   }
 
   function refreshCurrentLocation() {
@@ -98,7 +106,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
         </div>
       </header>
       <div className="bg-white border-b border-border px-6">
-        <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-emerald-500 text-emerald-700":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
+        <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>navigate(`/technicien/${t.id}`)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-emerald-500 text-emerald-700":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
       </div>
       <div className="flex-1 overflow-y-auto">
         {tab==="leads"&&<TechLeads/>}

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
 import {
   MessageSquare, Calendar, MapPin, Star, Send, ChevronRight, LogOut, Zap,
@@ -24,7 +25,10 @@ import { Avatar, Badge, ConfidenceBar, detectFaultType, NotificationPanel, Profi
 
 export function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }:
   { user: AppUser; location: UserLocation | null; technicians: Technician[]; onLogout: () => void; onUpdateUser: (u: AppUser) => void }) {
-  const [tab, setTab] = useState<ClientTab>("chat");
+  const navigate = useNavigate();
+  const { tab: tabParam } = useParams();
+  const validTabs: ClientTab[] = ["chat", "rdv", "map", "messages"];
+  const tab: ClientTab = validTabs.includes(tabParam as ClientTab) ? tabParam as ClientTab : "chat";
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -33,6 +37,10 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
   const [contactTechId, setContactTechId] = useState<number|null>(null);
   const unread = notifications.filter((n)=>!n.read).length;
   const tabs = [{ id:"chat" as ClientTab,label:"Devis IA",icon:MessageSquare },{ id:"rdv" as ClientTab,label:"Rendez-vous",icon:Calendar },{ id:"map" as ClientTab,label:"Techniciens",icon:MapPin },{ id:"messages" as ClientTab,label:"Messages",icon:MessageCircle }];
+
+  useEffect(() => {
+    if (tabParam !== tab) navigate(`/client/${tab}`, { replace:true });
+  }, [navigate, tab, tabParam]);
 
   useEffect(() => {
     api.get("/notifications").then((res) => setNotifications(res.data.map(mapNotification))).catch(console.error);
@@ -69,7 +77,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
   function openNotification(notification: Notification) {
     markRead(notification.id);
     const target: ClientTab = notification.type === "message" ? "messages" : notification.type === "rdv" || notification.type === "price" || notification.type === "rating" ? "rdv" : "chat";
-    setTab(target); setNotifOpen(false);
+    navigate(`/client/${target}`); setNotifOpen(false);
   }
   const contactTechnician = useCallback((id: number) => setContactTechId(id), []);
   const markContacted = useCallback((id: number) => setContactedTechs((items) => items.includes(id) ? items : [...items, id]), []);
@@ -86,7 +94,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
         </div>
       </header>
       <div className="bg-white border-b border-border px-6">
-        <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>setTab(t.id)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-primary text-primary":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
+        <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>navigate(`/client/${t.id}`)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-primary text-primary":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
       </div>
       <div className="flex-1 overflow-hidden">
         {tab==="chat"&&<ClientChat technicians={technicians} location={location} onContact={contactTechnician} onAppointmentCreated={(appointment)=>setAppointments((items)=>items.some((item)=>item.id===appointment.id)?items:[...items,appointment])}/>}
@@ -582,4 +590,3 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
 }
 
 // ─── Tech Dashboard ───────────────────────────────────────────────────────────
-
