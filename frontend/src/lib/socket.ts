@@ -1,8 +1,6 @@
 import { io, type Socket } from "socket.io-client";
-import { getAuthToken } from "./auth-storage";
 
 let socket: Socket | null = null;
-let socketToken: string | null = null;
 
 function socketUrl() {
   const configured = String(import.meta.env.VITE_API_URL || "").trim();
@@ -11,17 +9,12 @@ function socketUrl() {
 }
 
 export function realtimeSocket() {
-  const token = getAuthToken();
-  if (!token) return null;
-  if (!socket || socketToken !== token) {
-    socket?.disconnect();
-    socketToken = token;
+  if (!socket) {
     socket = io(socketUrl(), {
-      auth: { token },
+      withCredentials: true,
       transports: ["websocket", "polling"],
     });
   } else {
-    socket.auth = { token };
     if (!socket.connected) socket.connect();
   }
   return socket;
@@ -30,5 +23,4 @@ export function realtimeSocket() {
 export function disconnectRealtime() {
   socket?.disconnect();
   socket = null;
-  socketToken = null;
 }

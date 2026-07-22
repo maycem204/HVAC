@@ -1,17 +1,50 @@
 const jwt = require("jsonwebtoken");
-const { jwtSecret, jwtIssuer, jwtAudience, jwtExpiresIn } = require("../env");
+const { jwtSecret, jwtIssuer, jwtAudience, jwtExpiresIn, authCookieMaxAgeMs } = require("../env");
+
+const AUTH_COOKIE_NAME = "quoteai_session";
+
+function tokenFromCookie(cookieHeader) {
+  if (typeof cookieHeader !== "string") return null;
+  for (const item of cookieHeader.split(";")) {
+    const separator = item.indexOf("=");
+    if (separator < 0) continue;
+    const name = item.slice(0, separator).trim();
+    if (name !== AUTH_COOKIE_NAME) continue;
+    try { return decodeURIComponent(item.slice(separator + 1).trim()); }
+    catch { return null; }
+  }
+  return null;
+}
+
+function cookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: authCookieMaxAgeMs,
+  };
+}
+
+function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE_NAME, token, cookieOptions());
+}
+
+function clearAuthCookie(res) {
+  const { maxAge, ...options } = cookieOptions();
+  res.clearCookie(AUTH_COOKIE_NAME, options);
+}
 
 function auth(req, res, next) {
   const authHeader = req.headers.authorization;
 
   const match = typeof authHeader === "string" && authHeader.match(/^Bearer\s+([^\s]+)$/i);
-  if (!match) {
+  const token = tokenFromCookie(req.headers.cookie) || match?.[1];
+  if (!token) {
     return res.status(401).json({
       error: "No token provided",
     });
   }
-
-  const token = match[1];
 
   try {
     const decoded = verifyToken(token);
@@ -47,3 +80,6 @@ module.exports = auth;
 module.exports.signToken = signToken;
 module.exports.requireRole = requireRole;
 module.exports.verifyToken = verifyToken;
+module.exports.setAuthCookie = setAuthCookie;
+module.exports.clearAuthCookie = clearAuthCookie;
+module.exports.tokenFromCookie = tokenFromCookie;

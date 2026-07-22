@@ -5,10 +5,10 @@ const { seedClientPassword, seedTechPassword, port } = require("../env");
 
 const baseUrl = process.env.SMOKE_BASE_URL || `http://127.0.0.1:${port}`;
 
-async function request(path, { token, method = "GET", body } = {}) {
+async function request(path, { cookie, method = "GET", body } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+    headers: { ...(cookie ? { Cookie: cookie } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json();
@@ -17,8 +17,16 @@ async function request(path, { token, method = "GET", body } = {}) {
 }
 
 async function login(email, password) {
-  const data = await request("/login", { method: "POST", body: { email, password } });
-  return data.token;
+  const response = await fetch(`${baseUrl}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(`POST /login: ${response.status} ${data.error || ""}`);
+  const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
+  if (!cookie) throw new Error("Login did not return an authentication cookie");
+  return cookie;
 }
 
 async function main() {
@@ -26,12 +34,12 @@ async function main() {
   const date = "2026-11-27";
   const time = "11:17";
   try {
-    const clientToken = await login("client@quoteai.local", seedClientPassword);
-    const technicians = await request("/technicians", { token: clientToken });
+    const clientCookie = await login("client@quoteai.local", seedClientPassword);
+    const technicians = await request("/technicians", { cookie: clientCookie });
     const technician = technicians.find((item) => item.available);
     if (!technician) throw new Error("No available technician for smoke test");
     const booking = await request("/appointments", {
-      token: clientToken,
+      cookie: clientCookie,
       method: "POST",
       body: { technicianId: technician.id, date, time, service: "Smoke test planning", faultType: "Climatisation", estimatedPrice: 2500 },
     });
@@ -39,15 +47,15 @@ async function main() {
     if (booking.status !== "pending") throw new Error(`Expected pending appointment, got ${booking.status}`);
 
     const techUser = await pool.query("SELECT email FROM users WHERE id=$1", [technician.id]);
-    const techToken = await login(techUser.rows[0].email, seedTechPassword);
+    const techCookie = await login(techUser.rows[0].email, seedTechPassword);
     const [leads, appointments] = await Promise.all([
-      request("/leads", { token: techToken }), request("/appointments", { token: techToken }),
+      request("/leads", { cookie: techCookie }), request("/appointments", { cookie: techCookie }),
     ]);
     const lead = leads.find((item) => Number(item.appointment_id) === Number(appointmentId));
     const agendaItem = appointments.find((item) => Number(item.id) === Number(appointmentId));
     if (!lead || !agendaItem) throw new Error("Appointment is missing from lead inbox or technician agenda");
-    await request(`/leads/${lead.id}`, { token: techToken, method: "PATCH", body: { status: "accepted" } });
-    const clientAppointments = await request("/appointments", { token: clientToken });
+    await request(`/leads/${lead.id}`, { cookie: techCookie, method: "PATCH", body: { status: "accepted" } });
+    const clientAppointments = await request("/appointments", { cookie: clientCookie });
     if (clientAppointments.find((item) => Number(item.id) === Number(appointmentId))?.status !== "confirmed") {
       throw new Error("Accepted lead did not confirm the linked appointment");
     }

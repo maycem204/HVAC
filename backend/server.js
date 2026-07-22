@@ -1,4 +1,4 @@
-const { verifyToken } = require("./middleware/auth");
+const { verifyToken, tokenFromCookie } = require("./middleware/auth");
 const http = require("http");
 const { Server } = require("socket.io");
 const express = require("express");
@@ -56,7 +56,8 @@ const server = http.createServer(app);
 const io = new Server(server, corsOrigins.length ? { cors: { origin: corsOrigins, credentials: true } } : {});
 io.use((socket, next) => {
   try {
-    socket.user = verifyToken(socket.handshake.auth?.token);
+    const token = tokenFromCookie(socket.request.headers.cookie) || socket.handshake.auth?.token;
+    socket.user = verifyToken(token);
     next();
   } catch {
     next(new Error("unauthorized"));

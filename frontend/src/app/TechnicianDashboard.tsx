@@ -13,7 +13,6 @@ import api from "../lib/api";
 import TechnicianMap from "./TechnicianMap";
 import ConversationsPanel from "./ConversationsPanel";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
-import { clearAuthSession, getAuthToken, storeAuthSession } from "../lib/auth-storage";
 import { useSpeechRecognition } from "../features/chatbot/useSpeechRecognition";
 import type {
   AppUser, Appointment, BlockedSlot, ChatMsg, ClientTab, Lead, Notification,

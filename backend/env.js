@@ -61,6 +61,7 @@ module.exports = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   jwtIssuer: process.env.JWT_ISSUER || "quoteai-api",
   jwtAudience: process.env.JWT_AUDIENCE || "quoteai-web",
+  authCookieMaxAgeMs: envInt("AUTH_COOKIE_MAX_AGE_MS", 7 * 24 * 60 * 60 * 1000),
   bcryptRounds: envInt("BCRYPT_ROUNDS", 10),
   corsOrigins: corsOrigins.length > 0 ? corsOrigins : process.env.NODE_ENV === "production" ? [] : [
     "http://localhost:5174",

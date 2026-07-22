@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import api from "../lib/api";
-import { clearAuthSession, getAuthToken } from "../lib/auth-storage";
 import { disconnectRealtime } from "../lib/socket";
 import type { AppUser, Role, Technician, UserLocation } from "./domain";
 import { mapTechnician } from "./mappers";
@@ -20,8 +19,10 @@ export default function App() {
 
   // Auto-login dans la session propre à cet onglet.
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) { setBooting(false); return; }
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("user");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     api.get("/me")
       .then((res) => {
         const currentUser = res.data.user ?? res.data;
@@ -35,7 +36,7 @@ export default function App() {
           api.get("/geocode/forward", { params:{ city:query } }).then(({data})=>setLocation({ lat:Number(data.lat), lng:Number(data.lng), city:currentUser.city||data.city, district:currentUser.address||data.district||currentUser.city })).catch(()=>{});
         }
       })
-      .catch(() => clearAuthSession())
+      .catch(() => {})
       .finally(() => setBooting(false));
   }, []);
 
@@ -64,7 +65,11 @@ export default function App() {
     }
     if (user) navigate(dashboardPath(user), { replace:true });
   }
-  function logout(){ disconnectRealtime(); clearAuthSession(); setUser(null);setLocation(null);navigate("/", { replace:true }); }
+  async function logout(){
+    disconnectRealtime();
+    try { await api.post("/logout"); } catch (error) { console.error(error); }
+    setUser(null);setLocation(null);navigate("/", { replace:true });
+  }
   function updateUser(u: AppUser){setUser(u);}
   function updateTechnicianLocation(loc: UserLocation, updatedUser: AppUser){setLocation(loc);setUser(updatedUser);}
 

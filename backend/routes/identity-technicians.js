@@ -4,7 +4,7 @@ const express = require("express");
 const multer = require("multer");
 const { rateLimit } = require("express-rate-limit");
 const auth = require("../middleware/auth");
-const { signToken, requireRole } = require("../middleware/auth");
+const { signToken, requireRole, setAuthCookie, clearAuthCookie } = require("../middleware/auth");
 const { geocodingBaseUrl, geocodingUserAgent } = require("../env");
 const { hashPassword, verifyPassword, validatePassword } = require("../utils/password");
 const { forwardGeocode, reverseGeocode } = require("../services/geocoding");
@@ -65,7 +65,8 @@ router.post("/register", authLimiter, async (req, res) => {
       );
     }
     const token = signToken(user);
-    res.json({ token, user });
+    setAuthCookie(res, token);
+    res.json({ user });
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ error: "Un compte existe déjà avec cet email" });
     console.error(err);
@@ -104,11 +105,17 @@ router.post("/login", authLimiter, async (req, res) => {
     const token = signToken(user);
 
     const { password_hash, ...userWithoutPassword } = user;
-    res.json({ token, user: userWithoutPassword });
+    setAuthCookie(res, token);
+    res.json({ user: userWithoutPassword });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erreur interne" });
   }
+});
+
+router.post("/logout", (req, res) => {
+  clearAuthCookie(res);
+  res.status(204).end();
 });
 
 /* ===================== TECHNICIANS ===================== */

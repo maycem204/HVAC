@@ -12,7 +12,6 @@ import api from "../lib/api";
 import TechnicianMap from "./TechnicianMap";
 import ConversationsPanel from "./ConversationsPanel";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
-import { clearAuthSession, getAuthToken, storeAuthSession } from "../lib/auth-storage";
 import { useSpeechRecognition } from "../features/chatbot/useSpeechRecognition";
 import type {
   AppUser, Appointment, BlockedSlot, ChatMsg, ClientTab, Lead, Notification,
@@ -160,7 +159,7 @@ export function Landing({ onSelect }: { onSelect: (role: Role) => void }) {
 // OAuth côté backend (Passport Google, callback -> JWT), soit tu retires ce
 // bouton pour ne pas promettre une fonctionnalité qui n'existe pas encore.
 
-export function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; onLogin: (u: AppUser, token: string) => void }) {
+export function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => void; onLogin: (u: AppUser) => void }) {
   const [mode, setMode] = useState<"login"|"register">("login");
   const [showPass, setShowPass] = useState(false);
   const [form, setForm] = useState({ name:"", email:"", password:"", city:"" });
@@ -183,9 +182,7 @@ export function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => 
       const { data } = await api.post(url, payload);
 
 
-      storeAuthSession(data.token, data.user);
-
-      onLogin(data.user, data.token);
+      onLogin(data.user);
     } catch (err: any) {
       setError(err.response?.data?.error ?? "Une erreur est survenue. Vérifiez vos identifiants.");
     } finally {
@@ -218,4 +215,3 @@ export function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => 
 }
 
 // ─── Client Dashboard ─────────────────────────────────────────────────────────
-
