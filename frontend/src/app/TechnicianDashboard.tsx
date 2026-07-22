@@ -509,16 +509,15 @@ function TechAgenda() {
     window.location.href = `tel:${appt.clientPhone}`;
   }
 
-  function openDirections(appt: Appointment) {
-    const hasCoordinates = Number.isFinite(appt.clientLat) && Number.isFinite(appt.clientLng)
-      && (Number(appt.clientLat) !== 0 || Number(appt.clientLng) !== 0);
+  function directionsUrl(appt: Appointment) {
+    const latitude = Number(appt.clientLat);
+    const longitude = Number(appt.clientLng);
+    const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
+      && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+      && (latitude !== 0 || longitude !== 0);
     const locationText = [appt.address || appt.clientProfileAddress, appt.clientCity].filter(Boolean).join(", ");
-    const destination = hasCoordinates ? `${appt.clientLat},${appt.clientLng}` : locationText;
-    if (!destination.trim()) {
-      alert("Le client n’a enregistré ni coordonnées GPS, ni adresse, ni ville.");
-      return;
-    }
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving`, "_blank", "noopener,noreferrer");
+    const destination = hasCoordinates ? `${latitude},${longitude}` : locationText.trim();
+    return destination ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate` : null;
   }
 
   const dayApts = apptForDay(selectedDay);
@@ -553,7 +552,7 @@ function TechAgenda() {
           <div className="mb-4"><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{new Date(year,month,selectedDay).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</h2><p className="text-sm text-muted-foreground">{dayApts.length} rendez-vous · {hoursForDay(selectedDay)?.enabled?`disponible ${hoursForDay(selectedDay)?.startTime}–${hoursForDay(selectedDay)?.endTime}`:"journée non travaillée"}</p></div>
           {blocksForDay(selectedDay).length>0&&<div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-start gap-3 text-sm text-amber-800"><BanIcon className="w-5 h-5 shrink-0"/><div><strong>Créneaux bloqués :</strong> {blocksForDay(selectedDay).map((block)=>`${block.startTime.slice(0,5)}–${block.endTime.slice(0,5)}`).join(", ")}. Le reste de la journée demeure disponible.</div></div>}
           {dayApts.length===0?<div className="bg-white rounded-xl border border-gray-100 p-12 text-center shadow-sm"><Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-40"/><div className="text-sm text-muted-foreground">Aucun rendez-vous ce jour</div></div>:(
-            <div className="space-y-3">{dayApts.map((appt)=>{ const s=ss[appt.status]; return (
+            <div className="space-y-3">{dayApts.map((appt)=>{ const s=ss[appt.status]; const mapsUrl=directionsUrl(appt); return (
               <div key={appt.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex gap-4">
                 <div className="text-center w-16 shrink-0"><div className="text-sm font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{appt.time}</div><div className="text-xs text-muted-foreground">{appt.duration}</div><div className={`w-2.5 h-2.5 rounded-full mx-auto mt-2 ${s.dot}`}/></div>
                 <div className="w-px bg-gray-100 self-stretch"/>
@@ -565,7 +564,7 @@ function TechAgenda() {
                     {appt.status==="completed"&&appt.actualPrice?<div><div className="text-sm mb-1"><span className="text-muted-foreground">Réel : </span><span className="font-bold text-emerald-600">{appt.actualPrice} €</span></div>{appt.caseDescription&&<div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded-lg mt-1">{appt.caseDescription}</div>}</div>
                     :appt.status==="confirmed"?<button onClick={()=>{setSelectedAppt(appt);setShowPriceModal(true);}} className="text-xs text-emerald-600 hover:underline flex items-center gap-1"><Edit2 className="w-3 h-3"/>Saisir le prix réel après intervention</button>:null}
                   </div>
-                  <div className="flex gap-2 mt-3"><button onClick={()=>callClient(appt)} className="h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200 flex items-center gap-1.5"><Phone className="w-3 h-3"/>Appeler</button><button onClick={()=>openDirections(appt)} className="h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200 flex items-center gap-1.5"><MapPin className="w-3 h-3"/>Itinéraire</button></div>
+                  <div className="flex gap-2 mt-3"><button onClick={()=>callClient(appt)} className="h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200 flex items-center gap-1.5"><Phone className="w-3 h-3"/>Appeler</button>{mapsUrl?<a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="h-7 px-3 rounded-lg bg-gray-100 text-xs hover:bg-gray-200 flex items-center gap-1.5"><MapPin className="w-3 h-3"/>Itinéraire</a>:<button onClick={()=>alert("Le client n’a enregistré ni coordonnées GPS, ni adresse, ni ville.")} className="h-7 px-3 rounded-lg bg-gray-100 text-xs text-muted-foreground flex items-center gap-1.5"><MapPin className="w-3 h-3"/>Adresse indisponible</button>}</div>
                 </div>
               </div>
             );})}
