@@ -55,9 +55,11 @@ router.get("/leads", auth, requireRole("technician"), async (req, res) => {
          SELECT audit.extraction, audit.request_text
          FROM pricing_quote_audits audit
          WHERE audit.client_id = l.client_id
-           AND audit.created_at <= l.created_at
-           AND audit.created_at >= l.created_at - INTERVAL '2 hours'
-         ORDER BY audit.created_at DESC
+           AND audit.extraction IS NOT NULL
+           AND audit.created_at BETWEEN l.created_at - INTERVAL '24 hours' AND l.created_at + INTERVAL '2 hours'
+         ORDER BY
+           CASE WHEN ABS(COALESCE(NULLIF(audit.calculation->>'total','')::numeric, -1) - COALESCE(l.price, 0)) < 0.01 THEN 0 ELSE 1 END,
+           ABS(EXTRACT(EPOCH FROM (l.created_at - audit.created_at)))
          LIMIT 1
        ) qa ON true
        WHERE l.technician_id = $1

@@ -55,6 +55,62 @@ async function ensureRuntimeSchema(pool) {
     WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.appointment_id = a.id)
     ON CONFLICT DO NOTHING;
   `);
+  // Reconstitue les anciens diagnostics à partir des audits de devis existants.
+  // Le montant est prioritaire afin de ne pas rattacher une panne différente du même client.
+  await pool.query(`
+    WITH matches AS (
+      SELECT DISTINCT ON (l.id)
+        l.id AS lead_id,
+        l.appointment_id,
+        audit.extraction,
+        audit.request_text
+      FROM leads l
+      JOIN pricing_quote_audits audit ON audit.client_id = l.client_id
+        AND audit.extraction IS NOT NULL
+        AND audit.created_at BETWEEN l.created_at - INTERVAL '24 hours' AND l.created_at + INTERVAL '2 hours'
+      WHERE l.diagnostic_details IS NULL
+      ORDER BY l.id,
+        CASE WHEN ABS(COALESCE(NULLIF(audit.calculation->>'total','')::numeric, -1) - COALESCE(l.price, 0)) < 0.01 THEN 0 ELSE 1 END,
+        ABS(EXTRACT(EPOCH FROM (l.created_at - audit.created_at)))
+    )
+    UPDATE leads l
+    SET diagnostic_details = matches.extraction
+    FROM matches
+    WHERE l.id = matches.lead_id;
+
+    WITH matches AS (
+      SELECT DISTINCT ON (a.id)
+        a.id AS appointment_id,
+        audit.extraction,
+        audit.request_text
+      FROM appointments a
+      JOIN leads l ON l.appointment_id = a.id
+      JOIN pricing_quote_audits audit ON audit.client_id = a.client_id
+        AND audit.extraction IS NOT NULL
+        AND audit.created_at BETWEEN l.created_at - INTERVAL '24 hours' AND l.created_at + INTERVAL '2 hours'
+      WHERE a.diagnostic_details IS NULL OR a.case_description IS NULL
+      ORDER BY a.id,
+        CASE WHEN ABS(COALESCE(NULLIF(audit.calculation->>'total','')::numeric, -1) - COALESCE(a.estimated_price, 0)) < 0.01 THEN 0 ELSE 1 END,
+        ABS(EXTRACT(EPOCH FROM (l.created_at - audit.created_at)))
+    )
+    UPDATE appointments a
+    SET diagnostic_details = COALESCE(a.diagnostic_details, matches.extraction),
+        case_description = COALESCE(a.case_description, matches.request_text)
+    FROM matches
+    WHERE a.id = matches.appointment_id;
+
+    UPDATE leads l
+    SET diagnostic_details = jsonb_build_object(
+      'faults', jsonb_build_array(jsonb_build_object(
+        'description', COALESCE(NULLIF(l.problem, ''), 'Diagnostic à confirmer sur place'),
+        'equipment_type', COALESCE(NULLIF(l.fault_type, ''), 'Équipement HVAC'),
+        'intervention_type', 'Diagnostic à confirmer'
+      )),
+      'complexity', 'À confirmer sur place',
+      'urgency', 'Non précisée'
+    )
+    WHERE l.diagnostic_details IS NULL;
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conversations (
       id BIGSERIAL PRIMARY KEY,
