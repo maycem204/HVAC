@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import api from "../lib/api";
 import { disconnectRealtime } from "../lib/socket";
 import type { AppUser, Role, Technician, UserLocation } from "./domain";
@@ -42,11 +42,11 @@ export default function App() {
 
   // Les techniciens sont utilisés par le client (recherche/chat) — chargés une fois connecté
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.role !== "client") return;
     api.get("/technicians", {
       params: location ? { lat: location.lat, lng: location.lng } : undefined,
     }).then((res) => setTechnicians(res.data.map(mapTechnician))).catch(console.error);
-  }, [user, location]);
+  }, [user?.id, user?.role, location]);
 
   function selectRole(r: Role){navigate(`/connexion/${r === "client" ? "client" : "technicien"}`);}
   function handleLogin(u: AppUser){setUser(u);navigate("/localisation", { replace:true });}
@@ -77,37 +77,25 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"/></div>;
   }
 
-  function AuthRoute() {
-    const { role: roleParam } = useParams();
-    if (user) return <Navigate to={dashboardPath(user)} replace/>;
-    if (roleParam !== "client" && roleParam !== "technicien") return <Navigate to="/" replace/>;
-    const role: Role = roleParam === "client" ? "client" : "technician";
-    return <AuthForm role={role} onBack={()=>navigate("/")} onLogin={handleLogin}/>;
-  }
-
-  function ClientRoute() {
-    if (!user) return <Navigate to="/connexion/client" replace/>;
-    if (user.role !== "client") return <Navigate to={dashboardPath(user)} replace/>;
-    return <ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser}/>;
-  }
-
-  function TechnicianRoute() {
-    if (!user) return <Navigate to="/connexion/technicien" replace/>;
-    if (user.role !== "technician") return <Navigate to={dashboardPath(user)} replace/>;
-    return <TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} onLocationUpdate={updateTechnicianLocation}/>;
-  }
+  const clientRoute = !user ? <Navigate to="/connexion/client" replace/>
+    : user.role !== "client" ? <Navigate to={dashboardPath(user)} replace/>
+      : <ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser}/>;
+  const technicianRoute = !user ? <Navigate to="/connexion/technicien" replace/>
+    : user.role !== "technician" ? <Navigate to={dashboardPath(user)} replace/>
+      : <TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} onLocationUpdate={updateTechnicianLocation}/>;
 
   return (
     <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
       <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
       <Routes>
         <Route path="/" element={user ? <Navigate to={dashboardPath(user)} replace/> : <Landing onSelect={selectRole}/>}/>
-        <Route path="/connexion/:role" element={<AuthRoute/>}/>
+        <Route path="/connexion/client" element={user ? <Navigate to={dashboardPath(user)} replace/> : <AuthForm role="client" onBack={()=>navigate("/")} onLogin={handleLogin}/>}/>
+        <Route path="/connexion/technicien" element={user ? <Navigate to={dashboardPath(user)} replace/> : <AuthForm role="technician" onBack={()=>navigate("/")} onLogin={handleLogin}/>}/>
         <Route path="/localisation" element={user ? <LocationModal role={user.role} user={user} onDone={handleLocation}/> : <Navigate to="/" replace/>}/>
         <Route path="/client" element={<Navigate to="/client/chat" replace/>}/>
-        <Route path="/client/:tab" element={<ClientRoute/>}/>
+        <Route path="/client/:tab" element={clientRoute}/>
         <Route path="/technicien" element={<Navigate to="/technicien/leads" replace/>}/>
-        <Route path="/technicien/:tab" element={<TechnicianRoute/>}/>
+        <Route path="/technicien/:tab" element={technicianRoute}/>
         <Route path="*" element={<Navigate to={user ? dashboardPath(user) : "/"} replace/>}/>
       </Routes>
     </div>
