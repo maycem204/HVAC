@@ -1,5 +1,6 @@
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+const { aiConfig, embeddingConfig, geocodingConfig } = require("./config/external-services");
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -32,26 +33,9 @@ const corsOrigins = (process.env.CORS_ORIGINS || "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-const llmProvider = (process.env.LLM_PROVIDER || "deepseek").toLowerCase();
-const providerDefaults = {
-  deepseek: {
-    apiKey: process.env.DEEPSEEK_API_KEY || "",
-    baseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
-  },
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY || "",
-    baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-    model: process.env.OPENAI_MODEL || "",
-  },
-  anthropic: {
-    apiKey: process.env.ANTHROPIC_API_KEY || "",
-    baseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com/v1",
-    model: process.env.ANTHROPIC_MODEL || "",
-  },
-};
-const activeProvider = llmProvider === "claude" ? providerDefaults.anthropic : providerDefaults[llmProvider];
-if (!activeProvider) throw new Error(`Unsupported LLM_PROVIDER: ${llmProvider}`);
+const ai = aiConfig();
+const embeddings = embeddingConfig();
+const geocoding = geocodingConfig();
 
 module.exports = {
   port: envInt("PORT", 5000),
@@ -74,15 +58,20 @@ module.exports = {
   deepseekApiKey: process.env.DEEPSEEK_API_KEY || "",
   deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
   deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-chat",
-  llmProvider,
-  llmApiKey: process.env.LLM_API_KEY || activeProvider.apiKey,
-  llmBaseUrl: process.env.LLM_BASE_URL || activeProvider.baseUrl,
-  llmModel: process.env.LLM_MODEL || activeProvider.model,
-  embeddingApiKey: process.env.EMBEDDING_API_KEY || "",
+  aiProvider: ai.provider,
+  aiApiKey: ai.apiKey,
+  aiBaseUrl: ai.baseUrl,
+  aiModel: ai.model,
+  // Noms historiques conservés pour les modules et déploiements existants.
+  llmProvider: ai.provider,
+  llmApiKey: ai.apiKey,
+  llmBaseUrl: ai.baseUrl,
+  llmModel: ai.model,
+  embeddingApiKey: embeddings.apiKey,
   embeddingEnabled: envBool("EMBEDDING_ENABLED", true),
-  embeddingProvider: (process.env.EMBEDDING_PROVIDER || "openai-compatible").toLowerCase(),
-  embeddingBaseUrl: process.env.EMBEDDING_BASE_URL || "http://127.0.0.1:8081/v1",
-  embeddingModel: process.env.EMBEDDING_MODEL || "Qwen/Qwen3-Embedding-8B",
+  embeddingProvider: embeddings.provider,
+  embeddingBaseUrl: embeddings.baseUrl,
+  embeddingModel: embeddings.model,
   embeddingDimensions: envInt("EMBEDDING_DIMENSIONS", 1024),
   embeddingRequestDimensions: envBool("EMBEDDING_REQUEST_DIMENSIONS", false),
   embeddingQueryInstruction: process.env.EMBEDDING_QUERY_INSTRUCTION ?? "Retrieve the HVAC fault catalog entry that best matches the user request",
@@ -90,6 +79,9 @@ module.exports = {
   embeddingTimeoutMs: envInt("EMBEDDING_TIMEOUT_MS", 180000),
   embeddingQuotaRetryMs: envInt("EMBEDDING_QUOTA_RETRY_MS", 15 * 60 * 1000),
   pricingLlmTimeoutMs: envInt("PRICING_LLM_TIMEOUT_MS", 30000),
-  geocodingBaseUrl: process.env.GEOCODING_BASE_URL || "https://nominatim.openstreetmap.org",
-  geocodingUserAgent: process.env.GEOCODING_USER_AGENT || "QuoteAI-HVAC/1.0",
+  geocodingProvider: geocoding.provider,
+  geocodingBaseUrl: geocoding.baseUrl,
+  geocodingUserAgent: geocoding.userAgent,
+  geocodingApiKey: geocoding.apiKey,
+  mapTileOrigins: (process.env.MAP_TILE_ORIGINS || "https://tile.openstreetmap.org").split(",").map((value) => value.trim()).filter(Boolean),
 };

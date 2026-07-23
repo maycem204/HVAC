@@ -10,6 +10,7 @@ import {
   ChevronDown, Pencil, Save, Info,
 } from "lucide-react";
 import api from "../lib/api";
+import { createDirectionsUrl } from "../services/map-service";
 import TechnicianMap from "./TechnicianMap";
 import ConversationsPanel from "./ConversationsPanel";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
@@ -500,8 +501,8 @@ function TechAgenda({ technicianLocation }: { technicianLocation:UserLocation|nu
     if(!destination) return null;
     const techLat=Number(technicianLocation?.lat); const techLng=Number(technicianLocation?.lng);
     const hasOrigin=Number.isFinite(techLat)&&Number.isFinite(techLng)&&Math.abs(techLat)<=90&&Math.abs(techLng)<=180&&(techLat!==0||techLng!==0);
-    const origin=hasOrigin?`&origin=${encodeURIComponent(`${techLat},${techLng}`)}`:"";
-    return `https://www.google.com/maps/dir/?api=1${origin}&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate`;
+    const origin=hasOrigin?{lat:techLat,lng:techLng}:undefined;
+    return createDirectionsUrl(destination,origin);
   }
 
   const dayApts = apptForDay(selectedDay);

@@ -6,26 +6,16 @@ const auth = require("../middleware/auth");
 const pool = require("../db");
 const env = require("../env");
 const { PricingRepository } = require("../services/pricing/repository");
-const { createLlmClient } = require("../services/llm/factory");
-const { EmbeddingClient } = require("../services/pricing/embedding-client");
+const { createAiService } = require("../services/ai-service");
+const { createEmbeddingService } = require("../services/embedding-service");
 const { PricingOrchestrator } = require("../services/pricing/orchestrator");
 const { resolvePricingCountry } = require("../services/pricing/location-resolver");
 
 const router = express.Router();
 const orchestrator = new PricingOrchestrator({
   repository: new PricingRepository(pool),
-  llm: createLlmClient(env),
-  embeddings: new EmbeddingClient({
-    apiKey: env.embeddingApiKey,
-    enabled: env.embeddingEnabled,
-    provider: env.embeddingProvider,
-    baseUrl: env.embeddingBaseUrl,
-    model: env.embeddingModel,
-    dimensions: env.embeddingDimensions,
-    requestDimensions: env.embeddingRequestDimensions,
-    queryInstruction: env.embeddingQueryInstruction,
-    timeoutMs: env.embeddingTimeoutMs,
-  }),
+  llm: createAiService(env),
+  embeddings: createEmbeddingService(env),
 });
 
 const quoteLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });

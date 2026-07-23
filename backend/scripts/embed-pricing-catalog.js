@@ -2,7 +2,7 @@
 
 const pool = require("../db");
 const env = require("../env");
-const { EmbeddingClient } = require("../services/pricing/embedding-client");
+const { createEmbeddingService } = require("../services/embedding-service");
 const { vectorLiteral } = require("../services/pricing/repository");
 
 function delay(ms) {
@@ -10,17 +10,7 @@ function delay(ms) {
 }
 
 async function main() {
-  const embeddings = new EmbeddingClient({
-    apiKey: env.embeddingApiKey,
-    enabled: env.embeddingEnabled,
-    provider: env.embeddingProvider,
-    baseUrl: env.embeddingBaseUrl,
-    model: env.embeddingModel,
-    dimensions: env.embeddingDimensions,
-    requestDimensions: env.embeddingRequestDimensions,
-    queryInstruction: env.embeddingQueryInstruction,
-    timeoutMs: env.embeddingTimeoutMs,
-  });
+  const embeddings = createEmbeddingService(env);
   const result = await pool.query("SELECT id, code, category, subcategory, name, notes FROM pricing_faults WHERE embedding IS NULL OR embedding_model <> $1 ORDER BY id", [embeddings.storageModel]);
   for (let offset = 0; offset < result.rows.length; offset += env.embeddingBatchSize) {
     const batch = result.rows.slice(offset, offset + env.embeddingBatchSize);

@@ -18,8 +18,9 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
-      - key: LLM_PROVIDER
+      - key: AI_PROVIDER
         value: deepseek
+      # LLM_API_KEY reste accepté afin de ne pas invalider le secret Render existant.
       - key: LLM_API_KEY
         sync: false
       - key: EMBEDDING_ENABLED
@@ -38,6 +39,10 @@ services:
         value: "4"
       - key: EMBEDDING_QUOTA_RETRY_MS
         value: "900000"
+      - key: GEOCODING_PROVIDER
+        value: nominatim
+      - key: MAP_TILE_ORIGINS
+        value: https://tile.openstreetmap.org
 databases:
   - name: quoteai-postgres
     # PostgreSQL gratuit : 1 Go, sans sauvegarde et expiration apres 30 jours.

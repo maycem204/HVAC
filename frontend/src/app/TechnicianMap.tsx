@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from "react";
 import L, { LatLngBounds } from "leaflet";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { LeafletTileProvider } from "../providers/maps/LeafletTileProvider";
 
 type Coordinates = { lat: number; lng: number; city: string };
 
@@ -78,10 +79,7 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
 
   return (
     <MapContainer center={fallbackCenter} zoom={12} className="h-full w-full" scrollWheelZoom>
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url={import.meta.env.VITE_MAP_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
-      />
+      <LeafletTileProvider/>
       <MapViewport points={points} selected={selected} />
       {location && validPoint(location) && (
         <Marker position={[location.lat, location.lng]} icon={userIcon}>

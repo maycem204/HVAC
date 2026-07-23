@@ -7,7 +7,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const multer = require("multer");
 const { rateLimit } = require("express-rate-limit");
-const { port, corsOrigins } = require("./env");
+const { port, corsOrigins, mapTileOrigins } = require("./env");
 
 const pool = require("./db");
 const { ensureRuntimeSchema } = require("./db/ensure-runtime-schema");
@@ -24,7 +24,7 @@ app.set("trust proxy", 1);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      imgSrc: ["'self'", "data:", "https://tile.openstreetmap.org"],
+      imgSrc: ["'self'", "data:", ...mapTileOrigins],
     },
   },
   referrerPolicy: { policy: "strict-origin-when-cross-origin" },
