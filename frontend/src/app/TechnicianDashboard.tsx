@@ -90,20 +90,29 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
 
   function startLiveLocation() {
     if (!("geolocation" in navigator)) { setLocationError("La géolocalisation n’est pas disponible sur ce navigateur."); return; }
+    lastLocationSyncRef.current=0;
     setLocating(true); setLocationError("");
-    locationWatchRef.current=navigator.geolocation.watchPosition(async ({coords})=>{
+    const watchId=navigator.geolocation.watchPosition(async ({coords})=>{
       const { latitude, longitude } = coords;
       const now=Date.now();
       if(now-lastLocationSyncRef.current<15000) return;
       lastLocationSyncRef.current=now;
       const loc: UserLocation={lat:latitude,lng:longitude,city:location?.city||"Position GPS",district:"Position en direct"};
+      if(locationWatchRef.current==null)return;
+      onLocationUpdate(loc,{...user,lat:latitude,lng:longitude});
+      setLocating(false);setLocationError("");
       try {
         const {data:updatedUser}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});
         if(locationWatchRef.current==null)return;
         onLocationUpdate(loc,updatedUser);
-        setLocationTracking(true);setLocating(false);
-      } catch { setLocationError("La position a été obtenue, mais son enregistrement a échoué. Réessayez."); stopLiveLocation(); }
-    },()=>{setLocationError("Autorisez l’accès à votre position dans le navigateur, puis réessayez.");stopLiveLocation();},{enableHighAccuracy:true,maximumAge:10000,timeout:15000});
+      } catch { setLocationError("La position est active, mais sa synchronisation a temporairement échoué."); }
+    },(error)=>{
+      setLocating(false);
+      if(error.code===error.PERMISSION_DENIED){setLocationError("La localisation est bloquée. Autorisez-la dans les réglages du navigateur, puis réessayez.");stopLiveLocation();return;}
+      setLocationError(error.code===error.TIMEOUT?"La recherche GPS prend du temps. Le suivi reste actif et continue de chercher votre position.":"Position GPS momentanément indisponible. Le suivi reste actif.");
+    },{enableHighAccuracy:true,maximumAge:30000,timeout:30000});
+    locationWatchRef.current=watchId;
+    setLocationTracking(true);
   }
 
   function toggleLiveLocation(){if(locationTracking||locationWatchRef.current!=null)stopLiveLocation();else startLiveLocation();}
