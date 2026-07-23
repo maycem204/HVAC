@@ -14,7 +14,7 @@ const {
   specialtyMatches, sqlDate,
 } = require("../services/application-support");
 const pool = require("../db");
-const { emitToUser } = require("../realtime");
+const { emitToUser, emitTechnicianLocation } = require("../realtime");
 
 const router = express.Router();
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false });
@@ -301,6 +301,10 @@ router.patch("/users/:id", auth, async (req, res) => {
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
     const { name, email, phone, address, city, lat, lng, avatar } = req.body;
+    if ((lat != null || lng != null) && (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))
+      || Math.abs(Number(lat)) > 90 || Math.abs(Number(lng)) > 180 || (Number(lat) === 0 && Number(lng) === 0))) {
+      return res.status(400).json({ error: "Coordonnées GPS invalides" });
+    }
     if (avatar != null && (typeof avatar !== "string" || avatar.length > 500000
       || (!/^data:image\/(?:jpeg|png|webp);base64,/i.test(avatar) && !/^[A-Za-zÀ-ÿ]{1,4}$/.test(avatar)))) {
       return res.status(400).json({ error: "Photo de profil invalide ou trop volumineuse" });
@@ -328,7 +332,11 @@ router.patch("/users/:id", auth, async (req, res) => {
        RETURNING id, name, email, phone, address, city, role, avatar, lat, lng, country_code, currency`,
       [name, email, phone, address, city, detected?.lat ?? lat, detected?.lng ?? lng, avatar, detected?.countryCode, detected?.currency, req.user.id]
     );
-    res.json(result.rows[0]);
+    const updatedUser = result.rows[0];
+    if (updatedUser.role === "technician" && lat != null && lng != null) {
+      emitTechnicianLocation({ technicianId:updatedUser.id, lat:Number(updatedUser.lat), lng:Number(updatedUser.lng), updatedAt:new Date().toISOString() });
+    }
+    res.json(updatedUser);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import api from "../lib/api";
-import { disconnectRealtime } from "../lib/socket";
+import { disconnectRealtime, realtimeSocket } from "../lib/socket";
 import type { AppUser, Role, Technician, UserLocation } from "./domain";
 import { mapTechnician } from "./mappers";
 import { AuthForm, Landing, LocationModal } from "./PublicViews";
@@ -52,6 +52,28 @@ export default function App() {
       params: location ? { lat: location.lat, lng: location.lng } : undefined,
     }).then((res) => setTechnicians(res.data.map(mapTechnician))).catch(console.error);
   }, [user?.id, user?.role, location]);
+
+  useEffect(()=>{
+    if(user?.role!=="client")return;
+    const socket=realtimeSocket();if(!socket)return;
+    const updateTechnicianLocation=(payload:{technicianId:number;lat:number;lng:number})=>{
+      const lat=Number(payload.lat);const lng=Number(payload.lng);
+      if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+      setTechnicians((items)=>items.map((technician)=>{
+        if(technician.id!==Number(payload.technicianId))return technician;
+        let distanceKm=technician.distanceKm;
+        if(location){
+          const toRad=(value:number)=>value*Math.PI/180;
+          const dLat=toRad(lat-location.lat);const dLng=toRad(lng-location.lng);
+          const a=Math.sin(dLat/2)**2+Math.cos(toRad(location.lat))*Math.cos(toRad(lat))*Math.sin(dLng/2)**2;
+          distanceKm=6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        }
+        return {...technician,lat,lng,distanceKm};
+      }));
+    };
+    socket.on("technician:location",updateTechnicianLocation);
+    return()=>{socket.off("technician:location",updateTechnicianLocation);};
+  },[user?.role,location]);
 
   function selectRole(r: Role){navigate(`/connexion/${r === "client" ? "client" : "technicien"}`);}
   function handleLogin(u: AppUser){setUser(u);navigate("/localisation", { replace:true });}

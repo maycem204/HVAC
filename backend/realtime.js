@@ -10,4 +10,8 @@ function emitToUser(userId, event, payload) {
   io?.to(`user:${userId}`).emit(event, payload);
 }
 
-module.exports = { setRealtimeServer, emitToUser };
+function emitTechnicianLocation(payload) {
+  io?.emit("technician:location", payload);
+}
+
+module.exports = { setRealtimeServer, emitToUser, emitTechnicianLocation };
