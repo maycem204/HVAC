@@ -82,7 +82,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
   const markContacted = useCallback((id: number) => setContactedTechs((items) => items.includes(id) ? items : [...items, id]), []);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen h-[100dvh] min-h-0 overflow-hidden bg-background flex flex-col">
       <header className="relative z-10 bg-white border-b border-border px-3 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI</span></div>
         <div className="relative z-10 flex items-center gap-2 sm:gap-3">
@@ -96,7 +96,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
       <div className="bg-white border-b border-border px-6">
         <div className="flex gap-1">{tabs.map((t)=><button key={t.id} onClick={()=>navigate(`/client/${t.id}`)} className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-all ${tab===t.id?"border-primary text-primary":"border-transparent text-muted-foreground hover:text-foreground"}`}><t.icon className="w-4 h-4"/>{t.label}</button>)}</div>
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
         {tab==="chat"&&<ClientChat technicians={technicians} location={location} onContact={contactTechnician} onAppointmentCreated={(appointment)=>setAppointments((items)=>items.some((item)=>item.id===appointment.id)?items:[...items,appointment])}/>}
         {tab==="rdv"&&(
           <ClientRdv technicians={technicians} appointments={appointments} setAppointments={setAppointments}/>
@@ -524,8 +524,8 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
   }
 
   return (
-    <div className="h-full flex flex-col md:flex-row overflow-hidden">
-      <div className="relative z-[1100] w-full max-h-[55vh] md:max-h-none md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col shadow-sm md:shadow-none">
+    <div className="h-full min-h-0 flex flex-col md:flex-row overflow-hidden">
+      <div className="relative z-[1100] h-[45%] min-h-0 w-full shrink-0 md:h-full md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col shadow-sm md:shadow-none">
         <div className="p-3 border-b border-border space-y-2">
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Nom ou spécialisation…" className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
           <div className="flex gap-1.5 flex-wrap">
@@ -534,7 +534,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
           </div>
           {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{filtered.length} technicien(s) · depuis <strong>{location.city}</strong></div>}
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
           {filtered.map((t)=>{
             const isContacted = contactedTechs.includes(t.id);
             const ratingAllowed = t.canRate || isContacted;
@@ -581,7 +581,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
         </div>
       </div>
 
-      <div className="z-0 flex-1 min-h-[420px] relative overflow-hidden isolate">
+      <div className="z-0 flex-1 min-h-0 relative overflow-hidden isolate">
         <TechnicianMap technicians={filtered.map((technician)=>({...technician,canRate:technician.canRate||contactedTechs.includes(technician.id)}))} location={location} selectedId={selected} onSelect={selectTechnician} onContact={onContact} onRate={(id)=>{const technician=technicians.find((item)=>item.id===id);setSelected(id);setRatingTech(id);setRatingDraft({rating:technician?.myRating||0,comment:technician?.myRatingComment||""});}}/>
         <div className="absolute z-[1000] bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5 pointer-events-none">
           <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">Disponible</span></div>
