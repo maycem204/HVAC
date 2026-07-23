@@ -7,6 +7,8 @@ const { createApplicationSupport, normalizedSpecialty, specialtyMatches } = requ
 test("normalise les spécialités utilisées par la recherche de disponibilités", () => {
   assert.equal(normalizedSpecialty("Dépannage HVAC"), "depannage hvac");
   assert.equal(specialtyMatches(["Réparation", "Climatisation"], "Climatisation"), true);
+  assert.equal(specialtyMatches(["Réparation de climatiseurs industriels"], "Climatisation"), true);
+  assert.equal(specialtyMatches(["Réparation générale"], "Climatisation"), false);
 });
 
 function availabilityWith(schedule) {

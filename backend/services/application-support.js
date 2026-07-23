@@ -76,9 +76,12 @@ function normalizedSpecialty(value) {
 
 function specialtyMatches(specializations, requested) {
   const wanted = normalizedSpecialty(requested);
-  const groups = { climatisation: ["climatisation", "reparation", "refrigeration", "multi-split", "remplacement"], chauffage: ["chauffage", "pompe a chaleur", "maintenance preventive"], ventilation: ["ventilation", "installation"], installation: ["installation", "multi-split"] };
+  const groups = { climatisation: ["climatis", "refriger", "multi split", "split"], chauffage: ["chauff", "chaudiere", "pompe a chaleur"], ventilation: ["ventil"], installation: ["installation", "pose"] };
   const expected = groups[wanted] || [wanted];
-  return (specializations || []).some((value) => expected.some((item) => normalizedSpecialty(value).includes(item)));
+  return (specializations || []).some((value) => {
+    const normalized = normalizedSpecialty(value).replace(/-/g, " ");
+    return expected.some((item) => normalized.includes(item) || item.includes(normalized));
+  });
 }
 
 function sqlDate(value) {

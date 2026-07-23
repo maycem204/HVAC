@@ -168,6 +168,7 @@ export function ProfileModal({ user, role, onClose, onSave }:
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [techSpec, setTechSpec] = useState<string[]>([]);
+  const [customSpec, setCustomSpec] = useState("");
   const [radius, setRadius] = useState(10);
   const [photoError, setPhotoError] = useState("");
   const isClient = role === "client";
@@ -182,6 +183,12 @@ export function ProfileModal({ user, role, onClose, onSave }:
   }, [isClient, user.id]);
 
   function toggleSpec(s: string) { setTechSpec((p)=>p.includes(s)?p.filter((x)=>x!==s):[...p,s]); }
+  function addCustomSpec() {
+    const specialization = customSpec.trim().replace(/\s+/g, " ");
+    if (!specialization) return;
+    setTechSpec((current)=>current.some((item)=>item.toLocaleLowerCase()===specialization.toLocaleLowerCase())?current:[...current,specialization]);
+    setCustomSpec("");
+  }
 
   async function selectPhoto(file?: File) {
     if (!file) return;
@@ -235,6 +242,8 @@ export function ProfileModal({ user, role, onClose, onSave }:
               <div className="pt-2 space-y-4">
                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Spécialisations</div>
                 <div className="flex flex-wrap gap-2">{ALL_SPECIALIZATIONS.map((s)=><button key={s} onClick={()=>toggleSpec(s)} className={`px-3 py-1.5 rounded-full text-xs border transition-all ${techSpec.includes(s)?"bg-emerald-500 text-white border-emerald-500":"bg-gray-50 text-muted-foreground border-gray-200 hover:border-emerald-300"}`}>{techSpec.includes(s)&&<Check className="w-3 h-3 inline mr-1"/>}{s}</button>)}</div>
+                {techSpec.some((specialization)=>!ALL_SPECIALIZATIONS.includes(specialization))&&<div className="flex flex-wrap gap-2">{techSpec.filter((specialization)=>!ALL_SPECIALIZATIONS.includes(specialization)).map((specialization)=><button type="button" key={specialization} onClick={()=>toggleSpec(specialization)} className="px-3 py-1.5 rounded-full text-xs border border-emerald-500 bg-emerald-500 text-white"><Check className="w-3 h-3 inline mr-1"/>{specialization}<X className="w-3 h-3 inline ml-1"/></button>)}</div>}
+                <div><label className="block text-xs font-medium mb-1.5">Ajouter une spécialité personnalisée</label><div className="flex gap-2"><input value={customSpec} maxLength={80} onChange={(event)=>setCustomSpec(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"){event.preventDefault();addCustomSpec();}}} placeholder="Ex. Réparation de climatiseurs industriels" className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/><button type="button" onClick={addCustomSpec} disabled={!customSpec.trim()} className="h-10 px-3 rounded-lg bg-emerald-500 text-white text-xs font-semibold disabled:opacity-40"><Plus className="w-4 h-4"/></button></div><p className="mt-1 text-[11px] text-muted-foreground">Cette spécialité sera utilisée pour proposer les demandes correspondantes.</p></div>
                 <div><div className="flex items-center justify-between mb-2"><div className="text-xs font-medium">Rayon d'intervention</div><span className="text-sm font-bold text-emerald-600">{radius} km</span></div><input type="range" min={2} max={50} value={radius} onChange={(e)=>setRadius(Number(e.target.value))} className="w-full accent-emerald-500"/></div>
               </div>
             )}

@@ -120,7 +120,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
 // Chaque message part au backend. Le fournisseur LLM actif mène la clarification et le moteur
 // déterministe produit le devis dès que les informations sont suffisantes.
 
-type ScheduleRequest = { date: string | null; period: "morning" | "afternoon" | "evening" | "any" };
+type ScheduleRequest = { date: string | null; dateEnd?: string | null; period: "morning" | "afternoon" | "evening" | "any" };
 
 function localIsoDate(offsetDays: number) {
   const date = new Date();
@@ -130,12 +130,17 @@ function localIsoDate(offsetDays: number) {
 
 function schedulingIntent(text: string): ScheduleRequest | null {
   const normalized = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const date = /\baujourd[’']?hui\b/.test(normalized) ? localIsoDate(0)
-    : /\bdemain\b/.test(normalized) ? localIsoDate(1) : null;
+  const nextWeek = /\bsemaine prochaine\b/.test(normalized);
+  const currentDay = new Date().getDay();
+  const nextMondayOffset = ((8-currentDay)%7)||7;
+  const date = nextWeek ? localIsoDate(nextMondayOffset)
+    : /\baujourd[’']?hui\b/.test(normalized) ? localIsoDate(0)
+      : /\bdemain\b/.test(normalized) ? localIsoDate(1) : null;
+  const dateEnd = nextWeek ? localIsoDate(nextMondayOffset+6) : null;
   const period = /apres[ -]?midi/.test(normalized) ? "afternoon"
     : /\bmatin(?:ee)?\b/.test(normalized) ? "morning"
       : /\bsoir(?:ee)?\b/.test(normalized) ? "evening" : "any";
-  return date || period !== "any" ? { date, period } : null;
+  return date || period !== "any" ? { date, dateEnd, period } : null;
 }
 
 function readableDistance(distanceKm: number | null) {
@@ -157,6 +162,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   const [booked, setBooked] = useState(false);
   const [customDate, setCustomDate] = useState("");
   const [scheduleRequest, setScheduleRequest] = useState<ScheduleRequest>({ date:null, period:"any" });
+  const [visibleSlotCount, setVisibleSlotCount] = useState(4);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { isListening, supported, toggle:toggleMic } = useSpeechRecognition((text)=>setInput((p)=>p+(p?" ":"")+text));
   const faultType = detectFaultType(messages);
@@ -167,9 +173,9 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   const matchingTechs = specialists.length > 0 ? specialists : availableTechs;
   const urgency = /urgent|urgence|fumée|fumee|odeur de brûlé|odeur de brule|fuite|étincelle|etincelle/i.test(messages.map((message)=>message.text).join(" ")) ? "critical" : /rapidement|aujourd'hui|vite|en panne complète/i.test(messages.map((message)=>message.text).join(" ")) ? "urgent" : "normal";
   async function loadSuggestedSlots(request: ScheduleRequest = scheduleRequest) {
-    setSlotsLoading(true); setSelectedSlot(null); setSlotsError("");
+    setSlotsLoading(true); setSelectedSlot(null); setSlotsError(""); setVisibleSlotCount(4);
     try {
-      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency, date: request.date || undefined, period: request.period } });
+      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency, date: request.date || undefined, date_to: request.dateEnd || undefined, period: request.period } });
       setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), distanceKm: slot.distance_km == null ? null : Number(slot.distance_km), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
     } catch (err) { console.error(err); setProposedSlots([]); setSlotsError("Impossible de consulter les agendas pour le moment. Réessayez dans quelques instants."); }
     finally { setSlotsLoading(false); }
@@ -198,10 +204,12 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
       });
       const llmSchedule = data.extraction?.schedule_request;
       const llmDate = /^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule?.date || "")) ? String(llmSchedule.date) : null;
+      const llmDateEnd = llmDate && /^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule?.date_end || "")) && String(llmSchedule.date_end)>=llmDate ? String(llmSchedule.date_end) : llmDate;
       const llmPeriod = ["morning","afternoon","evening"].includes(llmSchedule?.period) ? llmSchedule.period as ScheduleRequest["period"] : "any";
       if (directSchedule || llmDate || llmPeriod !== "any") {
         const resolvedSchedule: ScheduleRequest = {
           date: directSchedule?.date || llmDate,
+          dateEnd: directSchedule?.dateEnd || llmDateEnd,
           period: directSchedule && directSchedule.period !== "any" ? directSchedule.period : llmPeriod,
         };
         setScheduleRequest(resolvedSchedule);
@@ -334,9 +342,9 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
             <div className="p-4 border-b border-gray-100"><div className="text-sm font-semibold">Spécialistes {faultType} disponibles</div><div className="text-xs text-muted-foreground mt-0.5">{slotsLoading?"Consultation des agendas…":`${new Set(proposedSlots.map((slot)=>slot.techId)).size} technicien(s) avec un créneau compatible`}</div></div>
             <div className="p-3 space-y-2">
               {slotsLoading&&<div className="p-4 text-sm text-muted-foreground text-center"><RefreshCw className="w-4 h-4 animate-spin inline mr-2"/>Recherche intelligente dans les agendas…</div>}
-              {!slotsLoading&&slotsError&&<div className="p-4 text-sm text-red-600 bg-red-50 rounded-xl text-center">{slotsError}<button onClick={loadSuggestedSlots} className="block mx-auto mt-2 text-xs font-semibold underline">Réessayer</button></div>}
+              {!slotsLoading&&slotsError&&<div className="p-4 text-sm text-red-600 bg-red-50 rounded-xl text-center">{slotsError}<button onClick={()=>loadSuggestedSlots()} className="block mx-auto mt-2 text-xs font-semibold underline">Réessayer</button></div>}
               {!slotsLoading&&!slotsError&&proposedSlots.length===0&&<div className="p-4 text-sm text-muted-foreground text-center">Aucun agenda libre parmi les spécialistes compatibles. Vous pouvez leur envoyer un message.</div>}
-              {proposedSlots.map((slot,i)=>{
+              {proposedSlots.slice(0,visibleSlotCount).map((slot,i)=>{
                 const tech = technicians.find((t)=>t.id===slot.techId); if(!tech) return null;
                 const isSel = selectedSlot?.date===slot.date&&selectedSlot?.time===slot.time&&selectedSlot?.techId===slot.techId;
                 return (
@@ -349,6 +357,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
                   </button>
                 );
               })}
+              {!slotsLoading&&proposedSlots.length>visibleSlotCount&&<button type="button" onClick={()=>setVisibleSlotCount((count)=>count+4)} className="w-full h-10 rounded-xl border border-primary/30 text-sm font-semibold text-primary hover:bg-blue-50">Voir plus de propositions</button>}
             </div>
             <div className="p-4 border-t border-gray-100 space-y-3">
               <div className="flex gap-2">

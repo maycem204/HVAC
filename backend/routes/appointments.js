@@ -56,6 +56,7 @@ router.get("/availability/suggestions", auth, requireRole("client"), async (req,
     const specialty = String(req.query.specialty || "Climatisation");
     const urgency = ["critical", "urgent", "normal"].includes(String(req.query.urgency)) ? String(req.query.urgency) : "normal";
     const requestedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? String(req.query.date) : null;
+    const requestedDateEnd = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date_to || "")) && String(req.query.date_to) >= requestedDate ? String(req.query.date_to) : requestedDate;
     const requestedPeriod = ["morning", "afternoon", "evening", "any"].includes(String(req.query.period)) ? String(req.query.period) : "any";
     const requester = await pool.query("SELECT lat, lng FROM users WHERE id = $1", [req.user.id]);
     const clientLat = requester.rows[0]?.lat == null ? null : Number(requester.rows[0].lat);
@@ -72,16 +73,18 @@ router.get("/availability/suggestions", auth, requireRole("client"), async (req,
       distance_km: haversineKm(clientLat, clientLng, row.lat, row.lng),
     })).filter((row) => row.distance_km == null || row.distance_km <= Number(row.radius_km || 10));
     const specialists = nearby.filter((row) => specialtyMatches(row.specializations, specialty));
-    const generalists = nearby.filter((row) => (row.specializations || []).some((value) => /reparation|maintenance|depannage|hvac/i.test(normalizedSpecialty(value))));
-    const candidates = (specialists.length ? specialists : generalists)
+    const candidates = specialists
       .sort((a, b) => (a.distance_km ?? Number.POSITIVE_INFINITY) - (b.distance_km ?? Number.POSITIVE_INFINITY));
     const horizon = urgency === "critical" ? 2 : urgency === "urgent" ? 4 : 7;
-    const slots = [];
+    const firstSlotByTechnician = new Map();
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    for (let offset = requestedDate ? 0 : urgency === "normal" ? 1 : 0; offset <= (requestedDate ? 0 : horizon); offset += 1) {
+    const requestedDays = requestedDate ? Math.min(31, Math.round((new Date(`${requestedDateEnd}T12:00:00`)-new Date(`${requestedDate}T12:00:00`))/86400000)) : null;
+    for (let offset = 0; offset <= (requestedDays ?? horizon); offset += 1) {
       const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
-      const date = requestedDate || `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+      const requestedDay = requestedDate ? new Date(`${requestedDate}T12:00:00`) : null;
+      if (requestedDay) requestedDay.setDate(requestedDay.getDate()+offset);
+      const date = requestedDay ? `${requestedDay.getFullYear()}-${String(requestedDay.getMonth() + 1).padStart(2, "0")}-${String(requestedDay.getDate()).padStart(2, "0")}` : `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
       const hours = requestedPeriod === "morning" ? [6,7,8,9,10,11]
         : requestedPeriod === "afternoon" ? [12,13,14,15,16,17]
           : requestedPeriod === "evening" ? [18,19,20,21]
@@ -90,13 +93,15 @@ router.get("/availability/suggestions", auth, requireRole("client"), async (req,
         if (date === today && hour <= now.getHours() + 1) continue;
         const time = `${String(hour).padStart(2, "0")}:00`;
         for (const technician of candidates) {
+          if (firstSlotByTechnician.has(technician.id)) continue;
           if ((await isTechnicianAvailable(technician.id, date, time)).available) {
-            slots.push({ date, time, technician_id: technician.id, technician_name: technician.name, distance_km: technician.distance_km == null ? null : Number(technician.distance_km.toFixed(1)), rating: technician.rating, reviews_count: technician.reviews_count, response_time: technician.response_time, urgency });
+            firstSlotByTechnician.set(technician.id, { date, time, technician_id: technician.id, technician_name: technician.name, distance_km: technician.distance_km == null ? null : Number(technician.distance_km.toFixed(1)), rating: technician.rating, reviews_count: technician.reviews_count, response_time: technician.response_time, urgency });
           }
         }
       }
     }
-    res.json({ specialty, urgency, requested_date: requestedDate, requested_period: requestedPeriod, matched_technicians: candidates.length, match_level: specialists.length ? "specialist" : "generalist", slots: slots.slice(0, 24) });
+    const slots = [...firstSlotByTechnician.values()].sort((a,b)=>(a.distance_km??Number.POSITIVE_INFINITY)-(b.distance_km??Number.POSITIVE_INFINITY) || `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+    res.json({ specialty, urgency, requested_date: requestedDate, requested_date_end: requestedDateEnd, requested_period: requestedPeriod, matched_technicians: candidates.length, match_level: "specialist", slots });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

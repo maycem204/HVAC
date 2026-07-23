@@ -234,6 +234,14 @@ router.patch("/technicians/:id", auth, requireRole("technician"), async (req, re
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
     const { specializations = [], radius_km = 10, available = true } = req.body;
+    if (!Array.isArray(specializations)) return res.status(400).json({ error: "Les spécialisations doivent être une liste." });
+    const cleanSpecializations = [...new Map(specializations
+      .map((value) => String(value || "").trim().replace(/\s+/g, " "))
+      .filter((value) => value.length >= 2 && value.length <= 80)
+      .slice(0, 20)
+      .map((value) => [value.toLocaleLowerCase("fr"), value])).values()];
+    const radius = Number(radius_km);
+    if (!Number.isFinite(radius) || radius < 2 || radius > 50) return res.status(400).json({ error: "Le rayon d'intervention doit être compris entre 2 et 50 km." });
     const result = await pool.query(
       `INSERT INTO technician_profiles (user_id, specializations, radius_km, available, response_time)
        VALUES ($1, $2, $3, $4, '30 min')
@@ -242,7 +250,7 @@ router.patch("/technicians/:id", auth, requireRole("technician"), async (req, re
          radius_km = EXCLUDED.radius_km,
          available = EXCLUDED.available
        RETURNING *`,
-      [req.user.id, specializations, radius_km, available]
+      [req.user.id, cleanSpecializations, radius, Boolean(available)]
     );
     res.json(result.rows[0]);
   } catch (err) {
