@@ -1,7 +1,17 @@
 "use strict";
 
 async function ensureRuntimeSchema(pool) {
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS country_code VARCHAR(2), ADD COLUMN IF NOT EXISTS currency VARCHAR(3)`);
+  await pool.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS country_code VARCHAR(2),
+      ADD COLUMN IF NOT EXISTS currency VARCHAR(3),
+      ADD COLUMN IF NOT EXISTS profile_lat DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS profile_lng DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS live_location_active BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS live_location_updated_at TIMESTAMPTZ;
+    UPDATE users SET profile_lat=lat, profile_lng=lng
+    WHERE profile_lat IS NULL AND profile_lng IS NULL AND lat IS NOT NULL AND lng IS NOT NULL;
+  `);
   await pool.query(`
     ALTER TABLE appointments
       ADD COLUMN IF NOT EXISTS currency VARCHAR(3) NOT NULL DEFAULT 'EUR',

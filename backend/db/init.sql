@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS users (
   avatar VARCHAR(4),
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
+  profile_lat DOUBLE PRECISION,
+  profile_lng DOUBLE PRECISION,
+  live_location_active BOOLEAN NOT NULL DEFAULT false,
+  live_location_updated_at TIMESTAMPTZ,
   country_code VARCHAR(2),
   currency VARCHAR(3),
   created_at TIMESTAMP DEFAULT now()

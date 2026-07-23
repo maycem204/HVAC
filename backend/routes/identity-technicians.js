@@ -142,7 +142,11 @@ router.get("/technicians", auth, async (req, res) => {
 
     const result = await pool.query(`
       SELECT 
-        u.id, u.name, u.city, u.lat, u.lng, u.avatar,
+        u.id, u.name, u.city,
+        CASE WHEN u.live_location_active AND u.live_location_updated_at > now() - INTERVAL '2 minutes' THEN u.lat ELSE COALESCE(u.profile_lat, u.lat) END AS lat,
+        CASE WHEN u.live_location_active AND u.live_location_updated_at > now() - INTERVAL '2 minutes' THEN u.lng ELSE COALESCE(u.profile_lng, u.lng) END AS lng,
+        (u.live_location_active AND u.live_location_updated_at > now() - INTERVAL '2 minutes') AS live_location_active,
+        u.avatar,
         t.specializations, t.rating, t.reviews_count,
         t.available, t.response_time, t.radius_km,
         EXISTS (
@@ -275,7 +279,9 @@ router.get("/me", auth, async (req, res) => {
         role,
         avatar,
         lat,
-        lng
+        lng,
+        live_location_active,
+        live_location_updated_at
       FROM users
       WHERE id = $1
       `,
@@ -308,7 +314,10 @@ router.get("/me", auth, async (req, res) => {
 router.patch("/users/:id", auth, async (req, res) => {
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
-    const { name, email, phone, address, city, lat, lng, avatar } = req.body;
+    const { name, email, phone, address, city, lat, lng, avatar, live_location_active:liveLocationActive } = req.body;
+    if (liveLocationActive !== undefined && typeof liveLocationActive !== "boolean") {
+      return res.status(400).json({ error: "État de localisation invalide" });
+    }
     if (city !== undefined && (typeof city !== "string" || city.trim().length < 2 || city.length > 120)) {
       return res.status(400).json({ error: "La ville ou la localisation du profil est obligatoire" });
     }
@@ -338,14 +347,20 @@ router.patch("/users/:id", auth, async (req, res) => {
            lng = COALESCE($7, lng),
            avatar = COALESCE($8, avatar),
            country_code = COALESCE($9, country_code),
-           currency = COALESCE($10, currency)
-       WHERE id = $11
-       RETURNING id, name, email, phone, address, city, role, avatar, lat, lng, country_code, currency`,
-      [name, email, phone, address, city?.trim(), detected?.lat ?? lat, detected?.lng ?? lng, avatar, detected?.countryCode, detected?.currency, req.user.id]
+           currency = COALESCE($10, currency),
+           live_location_active = COALESCE($11, live_location_active),
+           live_location_updated_at = CASE WHEN $11 = true THEN now() WHEN $11 = false THEN NULL ELSE live_location_updated_at END,
+           profile_lat = CASE WHEN $11 = false OR $5 IS NOT NULL THEN COALESCE($6, profile_lat) ELSE profile_lat END,
+           profile_lng = CASE WHEN $11 = false OR $5 IS NOT NULL THEN COALESCE($7, profile_lng) ELSE profile_lng END
+       WHERE id = $12
+       RETURNING id, name, email, phone, address, city, role, avatar, lat, lng, profile_lat, profile_lng, country_code, currency, live_location_active, live_location_updated_at`,
+      [name, email, phone, address, city?.trim(), detected?.lat ?? lat, detected?.lng ?? lng, avatar, detected?.countryCode, detected?.currency, liveLocationActive, req.user.id]
     );
     const updatedUser = result.rows[0];
-    if (updatedUser.role === "technician" && lat != null && lng != null) {
-      emitTechnicianLocation({ technicianId:updatedUser.id, lat:Number(updatedUser.lat), lng:Number(updatedUser.lng), updatedAt:new Date().toISOString() });
+    if (updatedUser.role === "technician" && (liveLocationActive !== undefined || (lat != null && lng != null))) {
+      const emittedLat = liveLocationActive === false ? updatedUser.profile_lat : updatedUser.lat;
+      const emittedLng = liveLocationActive === false ? updatedUser.profile_lng : updatedUser.lng;
+      emitTechnicianLocation({ technicianId:updatedUser.id, lat:Number(emittedLat), lng:Number(emittedLng), liveLocationActive:Boolean(updatedUser.live_location_active), updatedAt:new Date().toISOString() });
     }
     res.json(updatedUser);
   } catch (err) {

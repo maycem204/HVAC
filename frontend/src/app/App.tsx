@@ -57,7 +57,7 @@ export default function App() {
   useEffect(()=>{
     if(user?.role!=="client")return;
     const socket=realtimeSocket();if(!socket)return;
-    const updateTechnicianLocation=(payload:{technicianId:number;lat:number;lng:number})=>{
+    const updateTechnicianLocation=(payload:{technicianId:number;lat:number;lng:number;liveLocationActive?:boolean})=>{
       const lat=Number(payload.lat);const lng=Number(payload.lng);
       if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
       setTechnicians((items)=>items.map((technician)=>{
@@ -69,7 +69,7 @@ export default function App() {
           const a=Math.sin(dLat/2)**2+Math.cos(toRad(location.lat))*Math.cos(toRad(lat))*Math.sin(dLng/2)**2;
           distanceKm=6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
         }
-        return {...technician,lat,lng,distanceKm};
+        return {...technician,lat,lng,distanceKm,liveLocationActive:Boolean(payload.liveLocationActive)};
       }));
     };
     socket.on("technician:location",updateTechnicianLocation);
@@ -85,6 +85,7 @@ export default function App() {
         const { data } = await api.patch(`/users/${user.id}`, {
           lat: loc.lat,
           lng: loc.lng,
+          live_location_active:loc.source==="gps",
           ...(loc.source==="profile"?{city:loc.city}:{}),
         });
         setUser(data);
@@ -127,7 +128,7 @@ export default function App() {
       if(!place)throw new Error("Profile location unavailable");
       const fallback:UserLocation={lat:Number(place.lat),lng:Number(place.lng),city:currentUser.city||place.city||"Position du profil",district:currentUser.address||place.district||currentUser.city||"",source:"profile"};
       setLocation(fallback);
-      const {data}=await api.patch(`/users/${currentUser.id}`,{lat:fallback.lat,lng:fallback.lng});
+      const {data}=await api.patch(`/users/${currentUser.id}`,{lat:fallback.lat,lng:fallback.lng,live_location_active:false});
       setUser(data);
     }catch{
       setLocationError("Le suivi est désactivé, mais la position de votre ville n’a pas pu être actualisée.");
@@ -161,7 +162,7 @@ export default function App() {
             setLocation((current)=>current?.source==="gps"?{...current,city:data.city||"Position actuelle",district:data.district||data.city||"Position GPS"}:current);
           }).catch(()=>{lastLocationLabelRef.current=null;});
         }
-        try{const {data}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});if(locationWatchRef.current!=null)setUser(data);}
+        try{const {data}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude,live_location_active:true});if(locationWatchRef.current!=null)setUser(data);}
         catch{setLocationError("La position est active, mais sa synchronisation a temporairement échoué.");}
       },(error)=>{
         setLocationLocating(false);

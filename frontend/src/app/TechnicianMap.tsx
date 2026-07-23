@@ -14,6 +14,7 @@ type MapTechnician = {
   distanceKm: number | null;
   lat: number;
   lng: number;
+  liveLocationActive: boolean;
   specialty: string;
   rating: number;
   reviews: number;
@@ -98,6 +99,7 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
               {technician.avatar?.startsWith("data:image/")&&<img src={technician.avatar} alt={`Photo de ${technician.name}`} className="mb-2 h-14 w-14 rounded-full object-cover"/>}
               <strong>{technician.name}</strong>
               <div>{technician.specialty || "Technicien HVAC"}</div>
+              <div style={{color:technician.liveLocationActive?"#059669":"#64748b",fontSize:"12px"}}>{technician.liveLocationActive?"Position en direct":"Position du profil"}</div>
               <div style={{color:technician.reviews>0?"#d97706":"#64748b"}}>{technician.reviews>0?`★ ${technician.rating}/5 · ${technician.reviews} avis`:"Aucun avis"}</div>
               <div>{technician.distanceKm == null ? "Distance indisponible" : `${technician.distanceKm.toFixed(1)} km`}</div>
               <button type="button" onClick={() => onContact(technician.id)} className="mt-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">
