@@ -135,20 +135,26 @@ export default function App() {
     if(!user)return;
     if(!("geolocation" in navigator)){setLocationError("La géolocalisation n’est pas disponible sur ce navigateur.");return;}
     lastLocationSyncRef.current=0;setLocationLocating(true);setLocationError("");
-    const watchId=navigator.geolocation.watchPosition(async({coords})=>{
-      const {latitude,longitude}=coords;const now=Date.now();
-      if(now-lastLocationSyncRef.current<15000||locationWatchRef.current==null)return;
-      lastLocationSyncRef.current=now;
-      const loc:UserLocation={lat:latitude,lng:longitude,city:location?.city||user.city||"Position GPS",district:"Position en direct"};
-      setLocation(loc);setUser((current)=>current?{...current,lat:latitude,lng:longitude}:current);setLocationLocating(false);setLocationError("");
-      try{const {data}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});if(locationWatchRef.current!=null)setUser(data);}
-      catch{setLocationError("La position est active, mais sa synchronisation a temporairement échoué.");}
-    },(error)=>{
-      setLocationLocating(false);
-      if(error.code===error.PERMISSION_DENIED){setLocationError("La localisation est bloquée. Autorisez-la dans les réglages du navigateur, puis réessayez.");stopLiveLocation();return;}
-      setLocationError(error.code===error.TIMEOUT?"La recherche GPS prend du temps. Le suivi reste actif.":"Position GPS momentanément indisponible. Le suivi reste actif.");
-    },{enableHighAccuracy:true,maximumAge:30000,timeout:30000});
-    locationWatchRef.current=watchId;sessionStorage.setItem("live_location_enabled","true");setLocationTracking(true);
+    sessionStorage.setItem("live_location_enabled","true");setLocationTracking(true);
+    try{
+      const watchId=navigator.geolocation.watchPosition(async({coords})=>{
+        const {latitude,longitude}=coords;const now=Date.now();
+        if(now-lastLocationSyncRef.current<15000||locationWatchRef.current==null)return;
+        lastLocationSyncRef.current=now;
+        const loc:UserLocation={lat:latitude,lng:longitude,city:location?.city||user.city||"Position GPS",district:"Position en direct"};
+        setLocation(loc);setUser((current)=>current?{...current,lat:latitude,lng:longitude}:current);setLocationLocating(false);setLocationError("");
+        try{const {data}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});if(locationWatchRef.current!=null)setUser(data);}
+        catch{setLocationError("La position est active, mais sa synchronisation a temporairement échoué.");}
+      },(error)=>{
+        setLocationLocating(false);
+        if(error.code===error.PERMISSION_DENIED){setLocationError("La localisation est bloquée. Autorisez-la dans les réglages du navigateur, puis réessayez.");stopLiveLocation();return;}
+        setLocationError(error.code===error.TIMEOUT?"La recherche GPS prend du temps. Le suivi reste actif.":"Position GPS momentanément indisponible. Le suivi reste actif.");
+      },{enableHighAccuracy:true,maximumAge:30000,timeout:30000});
+      locationWatchRef.current=watchId;
+    }catch{
+      sessionStorage.removeItem("live_location_enabled");setLocationTracking(false);setLocationLocating(false);
+      setLocationError("Le navigateur empêche l’activation de la position. Vérifiez l’autorisation de localisation du site.");
+    }
   }
   function toggleLiveLocation(){if(locationTracking||locationWatchRef.current!=null)stopLiveLocation();else startLiveLocation();}
 
