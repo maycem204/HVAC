@@ -1,94 +1,120 @@
 # QuoteAI HVAC
 
-Plateforme de devis assisté par IA, de planification et de mise en relation entre clients et techniciens HVAC.
+AI-assisted quoting, scheduling, and client-to-technician matching platform for HVAC services.
 
-## Fonctionnalités principales
+## Main features
 
-- diagnostic conversationnel en français et en arabe ;
-- devis régionalisé dans la devise locale à partir d'un catalogue contrôlé ;
-- classement des techniciens par spécialité, disponibilité et distance ;
-- rendez-vous, agenda, leads, notifications et messagerie en temps réel ;
-- grilles tarifaires importables depuis CSV, Excel ou PDF texte ;
-- avis clients et suivi du prix réel des interventions.
+- Conversational diagnostics in French and Arabic.
+- Regional pricing in the local currency using a controlled service catalog.
+- Technician ranking by specialty, availability, and distance.
+- Appointments, calendars, leads, notifications, and real-time messaging.
+- Technician price lists imported from CSV, Excel, or text-based PDF files.
+- Client ratings and actual intervention price tracking.
+- Live client and technician locations with map and route support.
 
 ## Architecture
 
-- Backend unique Node.js/Express.
-- PostgreSQL avec pgvector comme source de vérité tarifaire.
-- DeepSeek extrait les paramètres, rédige le devis et contrôle sa fidélité. Il ne calcule jamais un prix.
-- Un fournisseur configurable génère les embeddings multilingues : serveur local compatible OpenAI par défaut, ou Gemini sur Render.
-- Le moteur JavaScript applique une formule déterministe et auditée.
-- Socket.IO diffuse les messages et mises à jour sur le même serveur HTTP.
+- React/Vite frontend structured with React Router.
+- Single Node.js/Express backend.
+- PostgreSQL with pgvector as the pricing source of truth.
+- Configurable AI Service supporting DeepSeek, OpenAI, and Anthropic/Claude.
+- Independent Embedding Service supporting Gemini and OpenAI-compatible providers.
+- Deterministic and auditable JavaScript pricing engine.
+- React Leaflet with configurable tile and directions providers.
+- Socket.IO for messages, notifications, appointments, and live locations.
+- JWT authentication stored in a secure HttpOnly cookie.
 
-Le flux est exposé par `POST /api/pricing/quote`. Les scores inférieurs à 0,50 et les pannes des services IA sont transférés vers le traitement humain. Après trois rejets du texte par le juge, le calcul validé est présenté avec un rendu déterministe.
+The pricing flow is exposed through `POST /api/pricing/quote`. Scores below `0.50` and upstream AI
+service failures are transferred to human processing. If the AI-generated wording fails the
+consistency judge three times, the validated calculation is returned using deterministic wording.
 
-## Prérequis
+## Requirements
 
-- Node.js 22 recommandé et npm ;
-- PostgreSQL avec les extensions `vector` et `unaccent` ;
-- une clé pour le fournisseur LLM sélectionné ;
-- un service d'embeddings compatible avec la configuration choisie ;
-- Docker, facultatif, pour les services locaux ou le déploiement.
+- Node.js 22 and npm.
+- PostgreSQL with the `vector` and `unaccent` extensions.
+- An API key for the selected AI provider.
+- An embedding service compatible with the selected configuration.
+- Docker, optionally, for local services and deployment.
 
-## Installation locale
+## Local installation
 
-1. Installer les dépendances :
+1. Install dependencies:
 
    ```bash
    npm --prefix backend install
    npm --prefix frontend install
    ```
 
-2. Copier `.env.example` vers `.env` à la racine et remplacer les valeurs de démonstration, notamment `DATABASE_URL`, `JWT_SECRET` et la clé LLM.
-3. Créer la base PostgreSQL et initialiser le schéma :
+2. Copy `.env.example` to `.env` at the repository root and replace the demonstration values,
+   especially `DATABASE_URL`, `JWT_SECRET`, and the external service keys.
+
+3. Create the PostgreSQL database and initialize the schema:
 
    ```bash
    npm run backend:db:init
    ```
 
-4. Importer le catalogue, puis générer ses embeddings :
+4. Import the pricing catalog and generate its embeddings:
 
    ```bash
    npm --prefix backend run pricing:import
    npm --prefix backend run pricing:embed
    ```
 
-5. Dans deux terminaux, lancer l'API et le frontend :
+5. Start the API and frontend in two terminals:
 
    ```bash
    npm run backend:dev
    npm run frontend
    ```
 
-Par défaut, l'API écoute sur `http://127.0.0.1:5000` et Vite sur `http://127.0.0.1:5174`.
+By default, the API listens on `http://127.0.0.1:5000` and Vite on
+`http://127.0.0.1:5174`.
 
-## Installation du pricing
+## Pricing catalog
 
-Après l'import, PostgreSQL devient la source de vérité tarifaire. Le classeur Excel n'est jamais lu pendant une requête client. Il faut le réimporter uniquement lorsque le catalogue source change, puis régénérer les embeddings.
+After import, PostgreSQL becomes the pricing source of truth. The Excel workbook is never read
+during a client request. Reimport it only when the source catalog changes, then regenerate the
+embeddings.
 
-### Serveur d'embeddings local
+### Local embedding server
 
-Le backend attend l'API OpenAI `POST /v1/embeddings` sur le port 8081 (le port 8080 est utilisé par EnterpriseDB). Avec un GPU NVIDIA, lancer Qwen3 via Hugging Face Text Embeddings Inference :
+The default local configuration expects an OpenAI-compatible `POST /v1/embeddings` endpoint on
+port 8081. Port 8080 is reserved by EnterpriseDB in the reference development environment.
+
+With an NVIDIA GPU, Qwen3 can be served through Hugging Face Text Embeddings Inference:
 
 ```bash
-docker run --gpus all -p 8081:80 -v hf_cache:/data ghcr.io/huggingface/text-embeddings-inference:1.9 --model-id Qwen/Qwen3-Embedding-8B --dtype float16
+docker run --gpus all -p 8081:80 -v hf_cache:/data \
+  ghcr.io/huggingface/text-embeddings-inference:1.9 \
+  --model-id Qwen/Qwen3-Embedding-8B --dtype float16
 ```
 
-Sans GPU, utiliser l'image CPU et BGE-M3, puis remplacer `EMBEDDING_MODEL` dans `.env` :
+For a CPU environment, BGE-M3 can be used:
 
 ```bash
-docker run --name quoteai_embeddings_bge_lean --restart unless-stopped -p 8081:80 -v hf_cache:/data ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id BAAI/bge-m3 --tokenization-workers 2 --max-concurrent-requests 16 --max-batch-tokens 2048 --max-client-batch-size 16
+docker run --name quoteai_embeddings_bge_lean --restart unless-stopped \
+  -p 8081:80 -v hf_cache:/data \
+  ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 \
+  --model-id BAAI/bge-m3 --tokenization-workers 2 \
+  --max-concurrent-requests 16 --max-batch-tokens 2048 \
+  --max-client-batch-size 16
 ```
 
 ```dotenv
+EMBEDDING_PROVIDER=openai-compatible
 EMBEDDING_MODEL=BAAI/bge-m3
 EMBEDDING_QUERY_INSTRUCTION=
 ```
 
-Si Docker dispose de moins de 12 Go de mémoire, utiliser `multilingual-e5-large-instruct`, officiellement pris en charge par TEI CPU et dont la dimension native est déjà 1024 :
+If Docker has less than 12 GB of memory, use `multilingual-e5-large-instruct`. It is supported by
+TEI CPU and its native dimension is already 1024:
 
 ```bash
-docker run -p 8081:80 -v hf_cache:/data ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 --model-id intfloat/multilingual-e5-large-instruct --tokenization-workers 2 --max-batch-tokens 4096
+docker run -p 8081:80 -v hf_cache:/data \
+  ghcr.io/huggingface/text-embeddings-inference:cpu-1.9 \
+  --model-id intfloat/multilingual-e5-large-instruct \
+  --tokenization-workers 2 --max-batch-tokens 4096
 ```
 
 ```dotenv
@@ -96,35 +122,90 @@ EMBEDDING_MODEL=intfloat/multilingual-e5-large-instruct
 EMBEDDING_QUERY_INSTRUCTION=Retrieve the HVAC fault catalog entry that best matches the user request
 ```
 
-Après chaque changement de modèle ou de dimension, relancer `npm --prefix backend run pricing:embed`. Les vecteurs sont ramenés à 1024 dimensions et normalisés côté backend pour rester compatibles avec le schéma pgvector.
+Run `npm --prefix backend run pricing:embed` after every model or dimension change. Vectors are
+reduced to 1024 dimensions and normalized by the backend to remain compatible with the pgvector
+schema.
 
-Sur CPU, les embeddings utilisent des lots de 8 documents et un délai maximal de 180 secondes, configurables avec `EMBEDDING_BATCH_SIZE` et `EMBEDDING_TIMEOUT_MS`.
+CPU embedding defaults use batches of eight documents and a 180-second timeout. These values can
+be changed through `EMBEDDING_BATCH_SIZE` and `EMBEDDING_TIMEOUT_MS`.
 
-### Cohérence conversationnelle et prix minimums
+### Gemini embeddings
 
-Le chat transmet les dix derniers messages au moteur afin de résoudre les réponses courtes dans leur contexte. Une demande d'aide simple, par exemple l'accès à un filtre sale, reçoit des consignes d'entretien avant toute proposition commerciale. Un devis n'est calculé que lorsque le client demande réellement une intervention.
+The Render configuration currently uses Gemini:
 
-Les petites interventions utilisent un plancher local de déplacement afin d'éviter les montants artificiellement bas. Les calibrations initiales sont de 2 500 DZD en Algérie (tarif public de nettoyage à Alger, 2026) et 45 TND en Tunisie (fourchette publique de 40 à 65 TND, 2025-2026). Elles sont stockées dans `pricing_service_minimums` et restent modifiables sans toucher au moteur de calcul.
-
-Si la rédaction produite par le LLM échoue trois fois au contrôle de fidélité, le backend génère un texte déterministe à partir du calcul validé. Le client conserve ainsi une estimation cohérente au lieu de recevoir un faux échec technique.
-
-### Import de la grille d'un technicien
-
-L'espace technicien accepte les fichiers CSV, Excel `.xlsx`/`.xlsm` et les PDF contenant du texte sélectionnable, jusqu'à 5 Mo. L'extraction recherche automatiquement les variantes françaises et anglaises des colonnes `Service`/`Prestation`, `Prix`/`Tarif`, `Unité` et `Catégorie`, même lorsque l'en-tête n'est pas sur la première ligne. Les PDF constitués uniquement d'images nécessitent d'abord une reconnaissance OCR.
-## Fournisseur LLM interchangeable
-
-Le moteur de tarification dépend uniquement de l'interface `extract()`, `redact()` et `judge()`. Les adaptateurs DeepSeek, OpenAI et Anthropic se sélectionnent sans modifier l'orchestrateur :
-
-```env
-LLM_PROVIDER=deepseek # deepseek | openai | anthropic
-LLM_API_KEY=...
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-chat
+```dotenv
+EMBEDDING_PROVIDER=gemini
+EMBEDDING_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+EMBEDDING_MODEL=gemini-embedding-2
+EMBEDDING_DIMENSIONS=1024
+EMBEDDING_API_KEY=...
 ```
 
-Pour OpenAI, utilisez une base terminant par `/v1`; pour Anthropic, `https://api.anthropic.com/v1`. Les anciennes variables `DEEPSEEK_*`, ainsi que les variables `OPENAI_*` et `ANTHROPIC_*`, restent disponibles comme valeurs de repli spécifiques au fournisseur.
+The pricing engine calls only the Embedding Service. Switching between Gemini, OpenAI, BGE-M3, or
+another OpenAI-compatible server does not require changes to routes or business logic.
 
-## Vérification
+### Conversation consistency and minimum prices
+
+The chat sends recent messages to the pricing engine so short answers can be resolved within their
+conversation context. A simple maintenance question, such as how to access a dirty filter, receives
+safe maintenance guidance before any commercial proposal. A quote is calculated only when the
+client is actually requesting an intervention.
+
+Small interventions use a local service minimum to avoid artificially low amounts. Initial
+calibrations are 2,500 DZD in Algeria and 45 TND in Tunisia. They are stored in
+`pricing_service_minimums` and can be updated without changing the calculation engine.
+
+If AI-generated wording fails the consistency check three times, the backend generates
+deterministic text from the validated calculation. The client therefore receives a consistent
+estimate instead of a false technical failure.
+
+### Technician price-list import
+
+The technician dashboard accepts CSV, Excel `.xlsx`/`.xlsm`, and text-based PDF files up to 5 MB.
+The parser recognizes French and English variants of the `Service`, `Price`, `Unit`, and `Category`
+columns even when the header is not on the first row. Image-only PDFs require OCR before import.
+
+## Interchangeable AI provider
+
+The pricing engine depends only on the `extract()`, `redact()`, and `judge()` AI Service interface.
+DeepSeek, OpenAI, and Anthropic/Claude adapters can be selected without modifying the orchestrator:
+
+```dotenv
+AI_PROVIDER=deepseek # deepseek | openai | anthropic
+AI_API_KEY=...
+AI_BASE_URL=https://api.deepseek.com
+AI_MODEL=deepseek-chat
+```
+
+OpenAI uses a base URL ending in `/v1`. Anthropic normally uses
+`https://api.anthropic.com/v1`. The legacy `LLM_*` variables remain supported for existing
+deployments.
+
+## Maps and geocoding
+
+Map tiles, attribution, directions, and geocoding are configurable independently:
+
+```dotenv
+VITE_MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
+VITE_MAP_TILE_ATTRIBUTION=&copy; OpenStreetMap contributors
+VITE_DIRECTIONS_PROVIDER=google
+VITE_DIRECTIONS_BASE_URL=https://www.google.com/maps/dir/
+
+GEOCODING_PROVIDER=nominatim
+GEOCODING_BASE_URL=https://nominatim.openstreetmap.org
+MAP_TILE_ORIGINS=https://tile.openstreetmap.org
+```
+
+When changing tile providers, add the new image origin to `MAP_TILE_ORIGINS` so the backend Content
+Security Policy allows it.
+
+## Authentication
+
+Authentication uses a signed JWT stored in the `quoteai_session` cookie. In production the cookie
+is `HttpOnly`, `Secure`, and `SameSite=Lax`. The browser sends it automatically for Axios and
+Socket.IO requests. The token is not stored in `localStorage` or `sessionStorage`.
+
+## Verification
 
 ```bash
 npm --prefix backend test
@@ -132,13 +213,29 @@ npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
 
-## Déploiement
+## Deployment
 
-L'application dispose d'une image Docker multi-étapes : le frontend Vite est compilé puis servi par Express, avec Socket.IO sur le même domaine. Le point de contrôle est `GET /health`.
+The project uses a multi-stage Docker image. Vite compiles the frontend, then Express serves the
+static application, API, and Socket.IO from the same domain. The health endpoint is `GET /health`.
 
-1. Créer une base PostgreSQL avec l'extension pgvector et exécuter `npm run backend:db:init`.
-2. Définir au minimum `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `LLM_PROVIDER`, `LLM_API_KEY`, `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL` et, si nécessaire, `EMBEDDING_API_KEY`.
-3. Construire l'image avec `docker build -t quoteai-hvac .`.
-4. Lancer avec `docker run --env-file .env.production -p 5000:5000 quoteai-hvac`.
+1. Create a PostgreSQL database with pgvector and run `npm run backend:db:init`.
+2. Configure at least `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `AI_PROVIDER`, the selected AI
+   credentials, and the embedding variables.
+3. Build the image:
 
-Le fichier `render.yaml` permet également un déploiement Blueprint sur Render. Au démarrage, le conteneur initialise le schéma, charge les comptes de démonstration et importe le catalogue avant de lancer l'indexation en arrière-plan. Les secrets marqués `sync: false` doivent être renseignés dans le tableau de bord. Ne déployez jamais le fichier `.env` local.
+   ```bash
+   docker build -t quoteai-hvac .
+   ```
+
+4. Run it:
+
+   ```bash
+   docker run --env-file .env.production -p 5000:5000 quoteai-hvac
+   ```
+
+`render.yaml` also supports a Render Blueprint deployment. At startup, the container initializes
+the schema, loads demonstration accounts, imports the pricing catalog, and starts embedding
+indexation in the background. Secrets marked `sync: false` must be configured in the Render
+dashboard.
+
+Never deploy or commit the local `.env` file.
