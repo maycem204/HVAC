@@ -191,6 +191,10 @@ export function ProfileModal({ user, role, onClose, onSave }:
   }
 
   async function save() {
+    if (!String(form.city || "").trim()) {
+      setPhotoError("La ville ou la localisation du profil est obligatoire.");
+      return;
+    }
     setSaving(true);
     setPhotoError("");
     try {
@@ -209,8 +213,8 @@ export function ProfileModal({ user, role, onClose, onSave }:
     }
   }
 
-  function field(key: keyof AppUser, label: string, type="text", ph="") {
-    return <div><label className="block text-xs font-medium mb-1.5">{label}</label><input type={type} placeholder={ph} value={form[key] as string} onChange={(e)=>setForm((p)=>({...p,[key]:e.target.value}))} className={`w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none ${isClient?"focus:border-blue-400":"focus:border-emerald-400"} transition-all`}/></div>;
+  function field(key: keyof AppUser, label: string, type="text", ph="", required=false) {
+    return <div><label className="block text-xs font-medium mb-1.5">{label}{required?" *":""}</label><input type={type} required={required} minLength={required?2:undefined} maxLength={required?120:undefined} placeholder={ph} value={form[key] as string} onChange={(e)=>setForm((p)=>({...p,[key]:e.target.value}))} className={`w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none ${isClient?"focus:border-blue-400":"focus:border-emerald-400"} transition-all`}/></div>;
   }
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
@@ -225,7 +229,7 @@ export function ProfileModal({ user, role, onClose, onSave }:
           {!isClient&&<div className="mb-5"><label className="block text-xs font-medium mb-1.5">Photo de profil</label><label className="h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm inline-flex items-center gap-2 cursor-pointer hover:bg-gray-100"><Upload className="w-4 h-4"/>Choisir une photo<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>selectPhoto(event.target.files?.[0])}/></label>{photoError&&<div className="text-xs text-red-600 mt-1">{photoError}</div>}</div>}
           <div className="space-y-4">
             <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Informations personnelles</div>
-            <div className="grid grid-cols-2 gap-3">{field("name","Nom complet","text","Votre nom")}{field("email","Email","email","votre@email.com")}{field("phone","Téléphone","tel","+213 6 xx xx xx")}{field("city","Ville","text","Alger")}</div>
+            <div className="grid grid-cols-2 gap-3">{field("name","Nom complet","text","Votre nom")}{field("email","Email","email","votre@email.com")}{field("phone","Téléphone","tel","+213 6 xx xx xx")}{field("city","Ville ou localisation","text","Alger",true)}</div>
             {field("address","Adresse","text","Numéro, rue, quartier…")}
             {!isClient && (
               <div className="pt-2 space-y-4">

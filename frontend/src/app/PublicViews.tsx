@@ -32,8 +32,8 @@ export function LocationModal({ role, user, onDone }: { role: Role; user: AppUse
     if (!query) return onDone(null);
     try {
       const { data } = await api.get("/geocode/forward", { params: { city: query } });
-      onDone({ lat:Number(data.lat), lng:Number(data.lng), city:user.city || data.city, district:user.address || data.district || user.city });
-    } catch { onDone({ lat:Number(user.lat||0), lng:Number(user.lng||0), city:user.city, district:user.address || user.city }); }
+      onDone({ lat:Number(data.lat), lng:Number(data.lng), city:user.city || data.city, district:user.address || data.district || user.city, source:"profile" });
+    } catch { onDone({ lat:Number(user.lat||0), lng:Number(user.lng||0), city:user.city, district:user.address || user.city, source:"profile" }); }
   }
 
   function requestGeo() {
@@ -54,6 +54,7 @@ export function LocationModal({ role, user, onDone }: { role: Role; user: AppUse
           lng: longitude,
           city: "Position GPS",
           district: "Position actuelle",
+          source: "gps",
         };
 
         try {
@@ -63,6 +64,7 @@ export function LocationModal({ role, user, onDone }: { role: Role; user: AppUse
             lng: longitude,
             city: data.city || loc.city,
             district: data.district || data.city || loc.district,
+            source: "gps",
           };
         } catch {
           loc = {
@@ -92,10 +94,10 @@ export function LocationModal({ role, user, onDone }: { role: Role; user: AppUse
     if (!city.trim()) return;
     try {
       const { data } = await api.get("/geocode/forward", { params: { city } });
-      onDone({ lat: data.lat, lng: data.lng, city: data.city ?? city, district: data.district ?? city });
+      onDone({ lat: data.lat, lng: data.lng, city: data.city ?? city, district: data.district ?? city, source:"profile" });
     } catch {
       // Si le géocodage échoue, on avance quand même avec la ville saisie
-      onDone({ lat: 0, lng: 0, city, district: city });
+      onDone({ lat: 0, lng: 0, city, district: city, source:"profile" });
     }
   }
 
@@ -202,7 +204,7 @@ export function AuthForm({ role, onBack, onLogin }: { role: Role; onBack: () => 
           {error && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-xs text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0"/>{error}</div>}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode==="register"&&<div><label className="block text-xs font-medium mb-1.5">Nom complet</label><input required value={form.name} onChange={(e)=>setForm((p)=>({...p,name:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>}
-            {mode==="register"&&<div className={!isClient?"p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50/50":""}><label className="block text-xs font-semibold mb-1.5">{isClient?"Ville":"Ville ou localisation du local professionnel *"}</label><input required={!isClient} minLength={2} maxLength={120} autoComplete="address-level2" placeholder="Ex : Houmt Souk, Djerba, Zarzis, Alger…" value={form.city} onChange={(e)=>setForm((p)=>({...p,city:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none ${focus}`}/>{!isClient&&<p className="mt-1.5 text-[11px] text-emerald-800">Champ obligatoire — indiquez la ville où vous travaillez ou l’emplacement de votre local.</p>}</div>}
+            {mode==="register"&&<div className={`p-3 rounded-xl border-2 ${isClient?"border-blue-200 bg-blue-50/50":"border-emerald-200 bg-emerald-50/50"}`}><label className="block text-xs font-semibold mb-1.5">{isClient?"Ville ou localisation *":"Ville ou localisation du local professionnel *"}</label><input required minLength={2} maxLength={120} autoComplete="address-level2" placeholder="Ex : Houmt Souk, Djerba, Zarzis, Alger…" value={form.city} onChange={(e)=>setForm((p)=>({...p,city:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none ${focus}`}/><p className={`mt-1.5 text-[11px] ${isClient?"text-blue-800":"text-emerald-800"}`}>Champ obligatoire — cette localisation sera utilisée par défaut lorsque le GPS est désactivé.</p></div>}
             <div><label className="block text-xs font-medium mb-1.5">Email</label><input type="email" required placeholder="votre@email.com" value={form.email} onChange={(e)=>setForm((p)=>({...p,email:e.target.value}))} className={`w-full h-11 px-4 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/></div>
             <div><label className="block text-xs font-medium mb-1.5">Mot de passe</label><div className="relative"><input type={showPass?"text":"password"} required minLength={mode==="register"?8:1} maxLength={72} autoComplete={mode==="register"?"new-password":"current-password"} placeholder="8 caractères minimum" value={form.password} onChange={(e)=>setForm((p)=>({...p,password:e.target.value}))} className={`w-full h-11 px-4 pr-10 rounded-xl border border-gray-200 bg-gray-50 text-sm focus:outline-none ${focus}`}/><button type="button" onClick={()=>setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">{showPass?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button></div>{mode==="register"&&<p className="mt-1.5 text-[11px] text-muted-foreground">Évitez votre nom, votre e-mail et les mots de passe courants.</p>}</div>
             <button type="submit" disabled={loading} className={`w-full h-11 rounded-xl ${bg} text-white text-sm font-semibold mt-2 disabled:opacity-50`}>{loading?"Chargement…":mode==="login"?"Se connecter":"Créer mon compte"}</button>

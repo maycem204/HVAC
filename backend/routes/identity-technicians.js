@@ -42,8 +42,8 @@ router.post("/register", authLimiter, async (req, res) => {
     const passwordError = validatePassword(password, { name, email });
     if (passwordError) return res.status(400).json({ error: passwordError });
     if (!['client', 'technician'].includes(role)) return res.status(400).json({ error: "Rôle invalide" });
-    if (role === "technician" && (typeof city !== "string" || city.trim().length < 2 || city.length > 120)) {
-      return res.status(400).json({ error: "La ville ou la localisation du local professionnel est obligatoire" });
+    if (typeof city !== "string" || city.trim().length < 2 || city.length > 120) {
+      return res.status(400).json({ error: "La ville ou la localisation du profil est obligatoire" });
     }
 
     const hashedPassword = await hashPassword(password);
@@ -52,7 +52,7 @@ router.post("/register", authLimiter, async (req, res) => {
       `INSERT INTO users (name, email, password_hash, role, city, phone, address)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, name, email, role, city, phone, address, avatar`,
-      [name, email, hashedPassword, role, city || null, phone || null, address || null]
+      [name, email, hashedPassword, role, city.trim(), phone || null, address || null]
     );
 
     const user = result.rows[0];
@@ -301,6 +301,9 @@ router.patch("/users/:id", auth, async (req, res) => {
   try {
     if (Number(req.params.id) !== req.user.id) return res.status(403).json({ error: "Forbidden" });
     const { name, email, phone, address, city, lat, lng, avatar } = req.body;
+    if (city !== undefined && (typeof city !== "string" || city.trim().length < 2 || city.length > 120)) {
+      return res.status(400).json({ error: "La ville ou la localisation du profil est obligatoire" });
+    }
     if ((lat != null || lng != null) && (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))
       || Math.abs(Number(lat)) > 90 || Math.abs(Number(lng)) > 180 || (Number(lat) === 0 && Number(lng) === 0))) {
       return res.status(400).json({ error: "Coordonnées GPS invalides" });
@@ -330,7 +333,7 @@ router.patch("/users/:id", auth, async (req, res) => {
            currency = COALESCE($10, currency)
        WHERE id = $11
        RETURNING id, name, email, phone, address, city, role, avatar, lat, lng, country_code, currency`,
-      [name, email, phone, address, city, detected?.lat ?? lat, detected?.lng ?? lng, avatar, detected?.countryCode, detected?.currency, req.user.id]
+      [name, email, phone, address, city?.trim(), detected?.lat ?? lat, detected?.lng ?? lng, avatar, detected?.countryCode, detected?.currency, req.user.id]
     );
     const updatedUser = result.rows[0];
     if (updatedUser.role === "technician" && lat != null && lng != null) {

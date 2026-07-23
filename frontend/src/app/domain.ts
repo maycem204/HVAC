@@ -7,7 +7,7 @@ export type PriceDecision = "accept" | "decline" | null;
 
 export interface AppUser { id: number; name: string; email: string; phone: string; address: string; city: string; role: Role; avatar: string; lat?: number; lng?: number; }
 export interface ChatMsg { role: "bot" | "user"; text: string; }
-export interface UserLocation { lat: number; lng: number; city: string; district: string; }
+export interface UserLocation { lat: number; lng: number; city: string; district: string; source?: "gps" | "profile"; }
 export interface Notification { id: number; type: "lead" | "rdv" | "price" | "rating" | "system" | "reassign" | "message"; title: string; message: string; time: string; read: boolean; }
 export interface SuggestedSlot { date: string; label: string; time: string; techId: number; distanceKm: number | null; }
 export interface Appointment { id: number; client: string; clientId?: number; technicianId: number; technicianName: string; clientPhone?: string; technicianPhone?: string; clientCity?: string; clientProfileAddress?: string; clientLat?: number; clientLng?: number; date: string; time: string; service: string; faultType?: string; estimatedPrice: number; actualPrice?: number; status: AppointmentStatus; currency: string; address: string; duration?: string; caseDescription?: string; clientConfirmedPrice?: boolean; rating?: number; feedback?: string; }

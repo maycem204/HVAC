@@ -18,6 +18,7 @@ export default function App() {
   const [locationError, setLocationError] = useState("");
   const locationWatchRef = useRef<number|null>(null);
   const lastLocationSyncRef = useRef(0);
+  const lastLocationLabelRef = useRef<{lat:number;lng:number;at:number}|null>(null);
   const navigate = useNavigate();
 
   const dashboardPath = (currentUser: AppUser) => currentUser.role === "client" ? "/client/chat" : "/technicien/leads";
@@ -29,16 +30,16 @@ export default function App() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     api.get("/me")
-      .then((res) => {
+      .then(async (res) => {
         const currentUser = res.data.user ?? res.data;
         setUser(currentUser);
         const lat = Number(currentUser.lat);
         const lng = Number(currentUser.lng);
-        if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
-          setLocation({ lat, lng, city: currentUser.city || "Position du profil", district: currentUser.city || "" });
-        } else if (currentUser.city || currentUser.address) {
-          const query = [currentUser.address, currentUser.city].filter(Boolean).join(", ");
-          api.get("/geocode/forward", { params:{ city:query } }).then(({data})=>setLocation({ lat:Number(data.lat), lng:Number(data.lng), city:currentUser.city||data.city, district:currentUser.address||data.district||currentUser.city })).catch(()=>{});
+        const liveRequested=sessionStorage.getItem("live_location_enabled")==="true";
+        if(liveRequested&&Number.isFinite(lat)&&Number.isFinite(lng)&&(lat!==0||lng!==0)){
+          setLocation({lat,lng,city:"Position actuelle",district:"Position GPS",source:"gps"});
+        }else{
+          await restoreProfileLocation(currentUser);
         }
       })
       .catch(() => {})
@@ -84,11 +85,16 @@ export default function App() {
         const { data } = await api.patch(`/users/${user.id}`, {
           lat: loc.lat,
           lng: loc.lng,
+          ...(loc.source==="profile"?{city:loc.city}:{}),
         });
         setUser(data);
       } catch (err) {
         console.error(err);
       }
+    }
+    if(loc?.source==="gps"){
+      sessionStorage.setItem("live_location_enabled","true");
+      startLiveLocation();
     }
     if (user) navigate(dashboardPath(user), { replace:true });
   }
@@ -98,12 +104,15 @@ export default function App() {
     try { await api.post("/logout"); } catch (error) { console.error(error); }
     setUser(null);setLocation(null);navigate("/", { replace:true });
   }
-  function updateUser(u: AppUser){setUser(u);}
+  function updateUser(u: AppUser){
+    setUser(u);
+    if(!locationTracking&&locationWatchRef.current==null)void restoreProfileLocation(u);
+  }
 
   async function restoreProfileLocation(currentUser: AppUser){
     const queries=[
-      [currentUser.address,currentUser.city].filter(Boolean).join(", "),
       currentUser.city,
+      [currentUser.address,currentUser.city].filter(Boolean).join(", "),
     ].filter((value,index,items)=>value&&items.indexOf(value)===index);
     if(!queries.length){setLocation(null);return;}
     setLocation(null);
@@ -116,7 +125,7 @@ export default function App() {
         }catch{}
       }
       if(!place)throw new Error("Profile location unavailable");
-      const fallback:UserLocation={lat:Number(place.lat),lng:Number(place.lng),city:currentUser.city||place.city||"Position du profil",district:currentUser.address||place.district||currentUser.city||""};
+      const fallback:UserLocation={lat:Number(place.lat),lng:Number(place.lng),city:currentUser.city||place.city||"Position du profil",district:currentUser.address||place.district||currentUser.city||"",source:"profile"};
       setLocation(fallback);
       const {data}=await api.patch(`/users/${currentUser.id}`,{lat:fallback.lat,lng:fallback.lng});
       setUser(data);
@@ -141,8 +150,17 @@ export default function App() {
         const {latitude,longitude}=coords;const now=Date.now();
         if(now-lastLocationSyncRef.current<15000||locationWatchRef.current==null)return;
         lastLocationSyncRef.current=now;
-        const loc:UserLocation={lat:latitude,lng:longitude,city:location?.city||user.city||"Position GPS",district:"Position en direct"};
-        setLocation(loc);setUser((current)=>current?{...current,lat:latitude,lng:longitude}:current);setLocationLocating(false);setLocationError("");
+        setLocation((current)=>({lat:latitude,lng:longitude,city:current?.source==="gps"?current.city:"Position actuelle",district:current?.source==="gps"?current.district:"Position GPS",source:"gps"}));
+        setUser((current)=>current?{...current,lat:latitude,lng:longitude}:current);setLocationLocating(false);setLocationError("");
+        const previousLabel=lastLocationLabelRef.current;
+        const shouldRefreshLabel=!previousLabel||now-previousLabel.at>=5*60*1000||Math.abs(latitude-previousLabel.lat)>=0.02||Math.abs(longitude-previousLabel.lng)>=0.02;
+        if(shouldRefreshLabel){
+          lastLocationLabelRef.current={lat:latitude,lng:longitude,at:now};
+          api.get("/geocode/reverse",{params:{lat:latitude,lng:longitude}}).then(({data})=>{
+            if(locationWatchRef.current==null)return;
+            setLocation((current)=>current?.source==="gps"?{...current,city:data.city||"Position actuelle",district:data.district||data.city||"Position GPS"}:current);
+          }).catch(()=>{lastLocationLabelRef.current=null;});
+        }
         try{const {data}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});if(locationWatchRef.current!=null)setUser(data);}
         catch{setLocationError("La position est active, mais sa synchronisation a temporairement échoué.");}
       },(error)=>{
