@@ -166,10 +166,10 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   // spécialistes exacts restent prioritaires, puis les généralistes peuvent diagnostiquer.
   const matchingTechs = specialists.length > 0 ? specialists : availableTechs;
   const urgency = /urgent|urgence|fumée|fumee|odeur de brûlé|odeur de brule|fuite|étincelle|etincelle/i.test(messages.map((message)=>message.text).join(" ")) ? "critical" : /rapidement|aujourd'hui|vite|en panne complète/i.test(messages.map((message)=>message.text).join(" ")) ? "urgent" : "normal";
-  async function loadSuggestedSlots() {
+  async function loadSuggestedSlots(request: ScheduleRequest = scheduleRequest) {
     setSlotsLoading(true); setSelectedSlot(null); setSlotsError("");
     try {
-      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency, date: scheduleRequest.date || undefined, period: scheduleRequest.period } });
+      const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency, date: request.date || undefined, period: request.period } });
       setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), distanceKm: slot.distance_km == null ? null : Number(slot.distance_km), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
     } catch (err) { console.error(err); setProposedSlots([]); setSlotsError("Impossible de consulter les agendas pour le moment. Réessayez dans quelques instants."); }
     finally { setSlotsLoading(false); }
@@ -180,7 +180,15 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
     if (loading||!text.trim()) return;
     const nextMessages = [...messages, { role:"user" as const, text }];
     const directSchedule = schedulingIntent(text);
-    if (directSchedule) setScheduleRequest(directSchedule);
+    if (directSchedule) {
+      setScheduleRequest(directSchedule);
+      if (showSlots) {
+        setMessages([...nextMessages,{role:"bot",text:"Je mets à jour la recherche selon votre disponibilité."}]);
+        setInput("");
+        void loadSuggestedSlots(directSchedule);
+        return;
+      }
+    }
     setMessages(nextMessages); setInput(""); setLoading(true); setQuote(null); setPriceDecision(null);
     try {
       const { data } = await api.post("/api/pricing/quote", {
@@ -189,8 +197,15 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         location: location ? { city: location.city, lat: location.lat, lng: location.lng } : undefined,
       });
       const llmSchedule = data.extraction?.schedule_request;
-      if (llmSchedule && (/^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule.date || "")) || ["morning","afternoon","evening"].includes(llmSchedule.period))) {
-        setScheduleRequest({ date: /^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule.date || "")) ? llmSchedule.date : directSchedule?.date || null, period: ["morning","afternoon","evening"].includes(llmSchedule.period) ? llmSchedule.period : directSchedule?.period || "any" });
+      const llmDate = /^\d{4}-\d{2}-\d{2}$/.test(String(llmSchedule?.date || "")) ? String(llmSchedule.date) : null;
+      const llmPeriod = ["morning","afternoon","evening"].includes(llmSchedule?.period) ? llmSchedule.period as ScheduleRequest["period"] : "any";
+      if (directSchedule || llmDate || llmPeriod !== "any") {
+        const resolvedSchedule: ScheduleRequest = {
+          date: directSchedule?.date || llmDate,
+          period: directSchedule && directSchedule.period !== "any" ? directSchedule.period : llmPeriod,
+        };
+        setScheduleRequest(resolvedSchedule);
+        if (showSlots) void loadSuggestedSlots(resolvedSchedule);
       }
       if (data.status === "quote") {
         setQuote({ price: data.calculation.total, low: data.calculation.range.min, high: data.calculation.range.max, conf: Math.round(data.confidence * 100), currency: data.calculation.currency, subtotal: data.calculation.subtotal ?? data.calculation.total, minimumAdjustment: data.calculation.service_minimum_adjustment ?? 0, extraction: data.extraction || {}, lines: data.calculation.lines || [], matches: data.matches || [] });
