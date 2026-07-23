@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseJsonContent } = require("../services/pricing/deepseek-client");
+const { parseJsonContent } = require("../services/llm/json");
 
 test("accepte un objet JSON entouré d'un bloc Markdown", () => {
   assert.deepEqual(parseJsonContent('```json\n{"valid":true}\n```'), { valid: true });

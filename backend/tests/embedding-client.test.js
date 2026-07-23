@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { EmbeddingClient, normalizeAndResize } = require("../services/pricing/embedding-client");
+const { EmbeddingService: EmbeddingClient, normalizeAndResize } = require("../services/embedding-service");
 
 test("réduit et normalise une sortie Qwen MRL à 1024 dimensions", () => {
   const vector = normalizeAndResize(Array(4096).fill(2), 1024);

@@ -2,9 +2,9 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { OpenAiCompatibleClient } = require("../services/llm/openai-compatible-client");
-const { OpenAiClient } = require("../services/llm/openai-client");
-const { AnthropicClient } = require("../services/llm/anthropic-client");
+const { OpenAiCompatibleClient } = require("../providers/ai/openai-compatible-provider");
+const { OpenAiClient } = require("../providers/ai/openai-provider");
+const { AnthropicClient } = require("../providers/ai/anthropic-provider");
 
 function response(payload) {
   return { ok: true, status: 200, async json() { return payload; } };

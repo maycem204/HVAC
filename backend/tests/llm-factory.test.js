@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createLlmClient } = require("../services/llm/factory");
+const { createAiService: createLlmClient } = require("../services/ai-service");
 
 for (const provider of ["deepseek", "openai", "anthropic"]) {
   test(`${provider} expose l'interface LLM métier stable`, () => {

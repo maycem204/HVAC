@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "db:init": "node db/init.js",
     "db:seed": "node db/seed.js",
@@ -17,9 +17,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "QuoteAI HVAC API, pricing engine, scheduling, and real-time services",
   "dependencies": {
-    "axios": "^1.18.1",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "country-to-currency": "^3.0.1",
@@ -32,9 +31,7 @@
     "multer": "^2.2.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.22.0",
-    "react-router-dom": "^7.18.1",
-    "socket.io": "^4.8.3",
-    "typescript": "^6.0.3"
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
