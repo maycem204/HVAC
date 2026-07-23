@@ -22,8 +22,8 @@ import type {
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { Avatar, Badge, ConfidenceBar, NotificationPanel, ProfileModal } from "./SharedUi";
 
-export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocationUpdate }:
-  { user: AppUser; location: UserLocation|null; onLogout: ()=>void; onUpdateUser: (u: AppUser)=>void; onLocationUpdate: (loc:UserLocation,u:AppUser)=>void }) {
+export function TechDashboard({ user, location, onLogout, onUpdateUser, locationTracking, locating, locationError, onToggleLocation, onClearLocationError }:
+  { user: AppUser; location: UserLocation|null; onLogout: ()=>void; onUpdateUser: (u: AppUser)=>void; locationTracking:boolean; locating:boolean; locationError:string; onToggleLocation:()=>void; onClearLocationError:()=>void }) {
   const navigate = useNavigate();
   const { tab: tabParam } = useParams();
   const validTabs: TechTab[] = ["leads", "messages", "tarifs", "agenda"];
@@ -31,11 +31,6 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [locationTracking, setLocationTracking] = useState(false);
-  const [locationError, setLocationError] = useState("");
-  const locationWatchRef = useRef<number|null>(null);
-  const lastLocationSyncRef = useRef(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
@@ -77,53 +72,13 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
     navigate(`/technicien/${target}`); setNotifOpen(false);
   }
 
-  useEffect(() => () => {
-    if (locationWatchRef.current != null && "geolocation" in navigator) navigator.geolocation.clearWatch(locationWatchRef.current);
-  }, []);
-
-  function stopLiveLocation() {
-    if (locationWatchRef.current != null && "geolocation" in navigator) navigator.geolocation.clearWatch(locationWatchRef.current);
-    locationWatchRef.current=null;
-    setLocationTracking(false);
-    setLocating(false);
-  }
-
-  function startLiveLocation() {
-    if (!("geolocation" in navigator)) { setLocationError("La géolocalisation n’est pas disponible sur ce navigateur."); return; }
-    lastLocationSyncRef.current=0;
-    setLocating(true); setLocationError("");
-    const watchId=navigator.geolocation.watchPosition(async ({coords})=>{
-      const { latitude, longitude } = coords;
-      const now=Date.now();
-      if(now-lastLocationSyncRef.current<15000) return;
-      lastLocationSyncRef.current=now;
-      const loc: UserLocation={lat:latitude,lng:longitude,city:location?.city||"Position GPS",district:"Position en direct"};
-      if(locationWatchRef.current==null)return;
-      onLocationUpdate(loc,{...user,lat:latitude,lng:longitude});
-      setLocating(false);setLocationError("");
-      try {
-        const {data:updatedUser}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});
-        if(locationWatchRef.current==null)return;
-        onLocationUpdate(loc,updatedUser);
-      } catch { setLocationError("La position est active, mais sa synchronisation a temporairement échoué."); }
-    },(error)=>{
-      setLocating(false);
-      if(error.code===error.PERMISSION_DENIED){setLocationError("La localisation est bloquée. Autorisez-la dans les réglages du navigateur, puis réessayez.");stopLiveLocation();return;}
-      setLocationError(error.code===error.TIMEOUT?"La recherche GPS prend du temps. Le suivi reste actif et continue de chercher votre position.":"Position GPS momentanément indisponible. Le suivi reste actif.");
-    },{enableHighAccuracy:true,maximumAge:30000,timeout:30000});
-    locationWatchRef.current=watchId;
-    setLocationTracking(true);
-  }
-
-  function toggleLiveLocation(){if(locationTracking||locationWatchRef.current!=null)stopLiveLocation();else startLiveLocation();}
-
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center"><Wrench className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI Pro</span><Badge color="green">Technicien</Badge></div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">Ce mois</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">Revenus</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><button onClick={()=>setRatingsOpen(true)} className="rounded-lg px-2 py-1 hover:bg-amber-50" title="Voir le détail des évaluations"><div className="text-xs text-muted-foreground">Note moy.</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></button></div>
-          <button onClick={toggleLiveLocation} aria-pressed={locationTracking} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span>{locationTracking?<><span className="hidden sm:inline">Désactiver ma position</span><span className="sm:hidden">Désactiver</span></>:"Activer ma position"}</span></button>
+          <button onClick={onToggleLocation} aria-pressed={locationTracking} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span>{locationTracking?<><span className="hidden sm:inline">Désactiver ma position</span><span className="sm:hidden">Désactiver</span></>:"Activer ma position"}</span></button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-emerald-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -141,7 +96,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
       {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openTechNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&<ProfileModal user={user} role="technician" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
       {ratingsOpen&&<TechRatings technicianId={user.id} onClose={()=>setRatingsOpen(false)}/>}
-      {locationError&&<div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg"><button onClick={()=>setLocationError("")} className="float-right ml-3"><X className="w-4 h-4"/></button>{locationError}</div>}
+      {locationError&&<div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg"><button onClick={onClearLocationError} className="float-right ml-3"><X className="w-4 h-4"/></button>{locationError}</div>}
     </div>
   );
 }
