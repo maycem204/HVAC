@@ -32,7 +32,10 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
   const [profileOpen, setProfileOpen] = useState(false);
   const [ratingsOpen, setRatingsOpen] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [locationTracking, setLocationTracking] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const locationWatchRef = useRef<number|null>(null);
+  const lastLocationSyncRef = useRef(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
@@ -74,23 +77,36 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
     navigate(`/technicien/${target}`); setNotifOpen(false);
   }
 
-  function refreshCurrentLocation() {
+  useEffect(() => () => {
+    if (locationWatchRef.current != null && "geolocation" in navigator) navigator.geolocation.clearWatch(locationWatchRef.current);
+  }, []);
+
+  function stopLiveLocation() {
+    if (locationWatchRef.current != null && "geolocation" in navigator) navigator.geolocation.clearWatch(locationWatchRef.current);
+    locationWatchRef.current=null;
+    setLocationTracking(false);
+    setLocating(false);
+  }
+
+  function startLiveLocation() {
     if (!("geolocation" in navigator)) { setLocationError("La géolocalisation n’est pas disponible sur ce navigateur."); return; }
     setLocating(true); setLocationError("");
-    navigator.geolocation.getCurrentPosition(async ({coords})=>{
+    locationWatchRef.current=navigator.geolocation.watchPosition(async ({coords})=>{
       const { latitude, longitude } = coords;
-      let loc: UserLocation={lat:latitude,lng:longitude,city:"Position GPS",district:"Position actuelle"};
+      const now=Date.now();
+      if(now-lastLocationSyncRef.current<15000) return;
+      lastLocationSyncRef.current=now;
+      const loc: UserLocation={lat:latitude,lng:longitude,city:location?.city||"Position GPS",district:"Position en direct"};
       try {
-        const [{data:place},{data:updatedUser}] = await Promise.all([
-          api.get("/geocode/reverse",{params:{lat:latitude,lng:longitude}}),
-          api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude}),
-        ]);
-        loc={lat:latitude,lng:longitude,city:place.city||"Position GPS",district:place.district||place.city||"Position actuelle"};
+        const {data:updatedUser}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude});
+        if(locationWatchRef.current==null)return;
         onLocationUpdate(loc,updatedUser);
-      } catch { setLocationError("La position a été obtenue, mais son enregistrement a échoué. Réessayez."); }
-      finally { setLocating(false); }
-    },()=>{setLocating(false);setLocationError("Autorisez l’accès à votre position dans le navigateur, puis réessayez.");},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+        setLocationTracking(true);setLocating(false);
+      } catch { setLocationError("La position a été obtenue, mais son enregistrement a échoué. Réessayez."); stopLiveLocation(); }
+    },()=>{setLocationError("Autorisez l’accès à votre position dans le navigateur, puis réessayez.");stopLiveLocation();},{enableHighAccuracy:true,maximumAge:10000,timeout:15000});
   }
+
+  function toggleLiveLocation(){if(locationTracking||locationWatchRef.current!=null)stopLiveLocation();else startLiveLocation();}
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -98,7 +114,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center"><Wrench className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI Pro</span><Badge color="green">Technicien</Badge></div>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">Ce mois</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">Revenus</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><button onClick={()=>setRatingsOpen(true)} className="rounded-lg px-2 py-1 hover:bg-amber-50" title="Voir le détail des évaluations"><div className="text-xs text-muted-foreground">Note moy.</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></button></div>
-          <button onClick={refreshCurrentLocation} disabled={locating} className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 disabled:opacity-60" title="Actualiser avec ma position GPS actuelle"><Navigation className={`w-3 h-3 text-emerald-500 ${locating?"animate-pulse":""}`}/>{locating?"Localisation…":location?.district||location?.city||"Actualiser ma position"}</button>
+          <button onClick={toggleLiveLocation} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50"}`} title={locationTracking?"Désactiver le suivi de ma position":"Activer le suivi de ma position en direct"}><Navigation className={`w-3 h-3 ${locationTracking?"text-emerald-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="hidden sm:inline">{locating?"Activation…":locationTracking?"Position en direct · Désactiver":"Activer ma position"}</span></button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-emerald-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -111,7 +127,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, onLocati
         {tab==="leads"&&<TechLeads/>}
         {tab==="messages"&&<ConversationsPanel/>}
         {tab==="tarifs"&&<TechTarifs city={user.city}/>}
-        {tab==="agenda"&&<TechAgenda/>}
+        {tab==="agenda"&&<TechAgenda technicianLocation={location}/>}
       </div>
       {notifOpen&&<NotificationPanel notifications={notifications} onSelect={openTechNotification} onReadAll={markAllRead} onClose={()=>setNotifOpen(false)}/>}
       {profileOpen&&<ProfileModal user={user} role="technician" onClose={()=>setProfileOpen(false)} onSave={(u)=>{ onUpdateUser(u); setProfileOpen(false); }}/>}
@@ -396,7 +412,7 @@ const WEEK_DAYS_FR = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Di
 const DEFAULT_WORKING_HOURS: WorkingHour[] = WEEK_DAYS_FR.map((_,weekDay)=>({weekDay,enabled:weekDay<6,startTime:weekDay===5?"09:00":"08:00",endTime:weekDay===5?"14:00":"18:00"}));
 const mapWorkingHour = (row: any): WorkingHour => ({weekDay:Number(row.week_day??row.weekDay),enabled:Boolean(row.enabled),startTime:String(row.start_time??row.startTime).slice(0,5),endTime:String(row.end_time??row.endTime).slice(0,5)});
 
-function TechAgenda() {
+function TechAgenda({ technicianLocation }: { technicianLocation:UserLocation|null }) {
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState(today.getDate());
@@ -517,7 +533,11 @@ function TechAgenda() {
       && (latitude !== 0 || longitude !== 0);
     const locationText = [appt.address || appt.clientProfileAddress, appt.clientCity].filter(Boolean).join(", ");
     const destination = hasCoordinates ? `${latitude},${longitude}` : locationText.trim();
-    return destination ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate` : null;
+    if(!destination) return null;
+    const techLat=Number(technicianLocation?.lat); const techLng=Number(technicianLocation?.lng);
+    const hasOrigin=Number.isFinite(techLat)&&Number.isFinite(techLng)&&Math.abs(techLat)<=90&&Math.abs(techLng)<=180&&(techLat!==0||techLng!==0);
+    const origin=hasOrigin?`&origin=${encodeURIComponent(`${techLat},${techLng}`)}`:"";
+    return `https://www.google.com/maps/dir/?api=1${origin}&destination=${encodeURIComponent(destination)}&travelmode=driving&dir_action=navigate`;
   }
 
   const dayApts = apptForDay(selectedDay);
