@@ -93,20 +93,46 @@ export default function App() {
     if (user) navigate(dashboardPath(user), { replace:true });
   }
   async function logout(){
-    stopLiveLocation();
+    stopLiveLocation(false);
     disconnectRealtime();
     try { await api.post("/logout"); } catch (error) { console.error(error); }
     setUser(null);setLocation(null);navigate("/", { replace:true });
   }
   function updateUser(u: AppUser){setUser(u);}
 
-  function stopLiveLocation(){
+  async function restoreProfileLocation(currentUser: AppUser){
+    const queries=[
+      [currentUser.address,currentUser.city].filter(Boolean).join(", "),
+      currentUser.city,
+    ].filter((value,index,items)=>value&&items.indexOf(value)===index);
+    if(!queries.length){setLocation(null);return;}
+    setLocation(null);
+    try{
+      let place:null|{lat:number|string;lng:number|string;city?:string;district?:string}=null;
+      for(const query of queries){
+        try{
+          const response=await api.get("/geocode/forward",{params:{city:query}});
+          place=response.data;break;
+        }catch{}
+      }
+      if(!place)throw new Error("Profile location unavailable");
+      const fallback:UserLocation={lat:Number(place.lat),lng:Number(place.lng),city:currentUser.city||place.city||"Position du profil",district:currentUser.address||place.district||currentUser.city||""};
+      setLocation(fallback);
+      const {data}=await api.patch(`/users/${currentUser.id}`,{lat:fallback.lat,lng:fallback.lng});
+      setUser(data);
+    }catch{
+      setLocationError("Le suivi est désactivé, mais la position de votre ville n’a pas pu être actualisée.");
+    }
+  }
+  function stopLiveLocation(restoreProfile=true){
     if(locationWatchRef.current!=null&&"geolocation" in navigator)navigator.geolocation.clearWatch(locationWatchRef.current);
     sessionStorage.removeItem("live_location_enabled");
     locationWatchRef.current=null;setLocationTracking(false);setLocationLocating(false);
+    const currentUser=user;
+    if(restoreProfile&&currentUser)void restoreProfileLocation(currentUser);
   }
   function startLiveLocation(){
-    if(!user||user.role!=="technician")return;
+    if(!user)return;
     if(!("geolocation" in navigator)){setLocationError("La géolocalisation n’est pas disponible sur ce navigateur.");return;}
     lastLocationSyncRef.current=0;setLocationLocating(true);setLocationError("");
     const watchId=navigator.geolocation.watchPosition(async({coords})=>{
@@ -128,7 +154,7 @@ export default function App() {
 
   useEffect(()=>()=>{if(locationWatchRef.current!=null&&"geolocation" in navigator)navigator.geolocation.clearWatch(locationWatchRef.current);},[]);
   useEffect(()=>{
-    if(user?.role==="technician"&&sessionStorage.getItem("live_location_enabled")==="true"&&locationWatchRef.current==null)startLiveLocation();
+    if(user&&sessionStorage.getItem("live_location_enabled")==="true"&&locationWatchRef.current==null)startLiveLocation();
   },[user?.id,user?.role]);
 
   if (booting) {
@@ -137,7 +163,7 @@ export default function App() {
 
   const clientRoute = !user ? <Navigate to="/connexion/client" replace/>
     : user.role !== "client" ? <Navigate to={dashboardPath(user)} replace/>
-      : <ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser}/>;
+      : <ClientDashboard user={user} location={location} technicians={technicians} onLogout={logout} onUpdateUser={updateUser} locationTracking={locationTracking} locating={locationLocating} locationError={locationError} onToggleLocation={toggleLiveLocation} onClearLocationError={()=>setLocationError("")}/>;
   const technicianRoute = !user ? <Navigate to="/connexion/technicien" replace/>
     : user.role !== "technician" ? <Navigate to={dashboardPath(user)} replace/>
       : <TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} locationTracking={locationTracking} locating={locationLocating} locationError={locationError} onToggleLocation={toggleLiveLocation} onClearLocationError={()=>setLocationError("")}/>;

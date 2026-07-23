@@ -22,8 +22,8 @@ import type {
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { Avatar, Badge, ConfidenceBar, detectFaultType, NotificationPanel, ProfileModal, technicianMatchesFault } from "./SharedUi";
 
-export function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser }:
-  { user: AppUser; location: UserLocation | null; technicians: Technician[]; onLogout: () => void; onUpdateUser: (u: AppUser) => void }) {
+export function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser, locationTracking, locating, locationError, onToggleLocation, onClearLocationError }:
+  { user: AppUser; location: UserLocation | null; technicians: Technician[]; onLogout: () => void; onUpdateUser: (u: AppUser) => void; locationTracking:boolean; locating:boolean; locationError:string; onToggleLocation:()=>void; onClearLocationError:()=>void }) {
   const navigate = useNavigate();
   const { tab: tabParam } = useParams();
   const validTabs: ClientTab[] = ["chat", "rdv", "map", "messages"];
@@ -87,6 +87,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI</span></div>
         <div className="flex items-center gap-3">
           {location&&<div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 text-blue-500"/>{location.city}</div>}
+          <button onClick={onToggleLocation} aria-pressed={locationTracking} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-blue-300 hover:bg-blue-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span>{locationTracking?<><span className="hidden sm:inline">Désactiver ma position</span><span className="sm:hidden">Désactiver</span></>:<><span className="hidden sm:inline">Activer ma position</span><span className="sm:hidden">Activer</span></>}</span></button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-blue-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -110,6 +111,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
       {contactTechId!=null&&(
         <ConversationsPanel initialTechnician={technicians.find((technician)=>technician.id===contactTechId) ?? null} onContacted={markContacted} onClose={()=>setContactTechId(null)}/>
       )}
+      {locationError&&<div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-lg"><button onClick={onClearLocationError} className="float-right ml-3"><X className="w-4 h-4"/></button>{locationError}</div>}
     </div>
   );
 }
