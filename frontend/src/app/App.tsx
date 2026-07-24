@@ -12,7 +12,7 @@ import { ClientDashboard } from "./ClientDashboard";
 import { TechDashboard } from "./TechnicianDashboard";
 
 export default function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [user, setUser] = useState<AppUser|null>(null);
   const [location, setLocation] = useState<UserLocation|null>(null);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -198,7 +198,7 @@ export default function App() {
       : <TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} locationTracking={locationTracking} locating={locationLocating} locationError={locationError} onToggleLocation={toggleLiveLocation} onClearLocationError={()=>setLocationError("")}/>;
 
   return (
-      <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
+      <div key={i18n.resolvedLanguage || i18n.language} className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
         <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
         <Routes>
         <Route path="/" element={<MarketingLanding onSelect={selectRole}/>}/>
