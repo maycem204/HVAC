@@ -1,6 +1,7 @@
 import {
   ArrowRight, Bot, CalendarCheck, Check, CheckCircle2, Clock3,
-  MapPin, ShieldCheck, Sparkles, TrendingUp, Wrench, X, Zap,
+  Coins, Globe2, Languages, MapPin, ShieldCheck, Sparkles, TrendingUp,
+  Wrench, X, Zap,
 } from "lucide-react";
 import type { Role } from "./domain";
 
@@ -39,13 +40,13 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 py-20 sm:px-6 sm:py-28 lg:grid-cols-[1.02fr_.98fr] lg:px-8 lg:py-32">
             <div>
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                <Sparkles className="h-3.5 w-3.5"/> AI-powered HVAC quoting
+                <Globe2 className="h-3.5 w-3.5"/> Built for the MENA HVAC market
               </div>
               <h1 className="max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-6xl">
                 Generate HVAC quotes in seconds with AI
               </h1>
               <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-                Describe the issue, receive a clear local-price estimate, and connect with the right available HVAC specialist—without waiting for callbacks.
+                AI-powered HVAC estimates adapted to MENA markets, local currencies, and regional service realities. Describe the issue and connect with the right available specialist—without waiting for callbacks.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <button onClick={()=>onSelect("client")} className="group inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:-translate-y-0.5 hover:bg-primary/90">
@@ -98,6 +99,21 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           </div>
         </section>
 
+        <section className="border-y border-slate-100 bg-white py-10">
+          <div className="mx-auto grid max-w-7xl gap-4 px-4 sm:px-6 md:grid-cols-3 lg:px-8">
+            {[
+              {Icon:Coins,title:"Local market pricing",text:"Estimates use regional HVAC data and display the appropriate local currency."},
+              {Icon:Languages,title:"Arabic, French & English",text:"A clearer customer journey across the languages most used throughout MENA."},
+              {Icon:MapPin,title:"Location-aware matching",text:"Clients find qualified nearby technicians within their actual service area."},
+            ].map(({Icon,title,text})=>(
+              <div key={title} className="flex items-start gap-3 rounded-2xl p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50"><Icon className="h-4.5 w-4.5 text-primary"/></div>
+                <div><h2 className="text-sm font-bold text-slate-900">{title}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{text}</p></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section id="features" className="border-y border-slate-100 bg-slate-50/70 py-20 sm:py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
@@ -116,7 +132,7 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
               <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm sm:p-8">
                 <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50"><Zap className="h-5 w-5 text-emerald-600"/></div>
                 <h3 className="text-xl font-bold">The QuoteAI way</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Instant AI-powered pricing turns a clear issue description into an actionable service request.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Instant AI-powered pricing turns a clear issue description into an actionable service request adapted to the customer’s MENA market.</p>
                 <div className="mt-6 space-y-3">
                   {["Context-aware HVAC issue clarification","Transparent estimates in the correct local currency","Nearby specialists ranked by skill and availability"].map((item)=><div key={item} className="flex items-start gap-3 rounded-xl bg-emerald-50/60 p-3 text-sm text-slate-700"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"/>{item}</div>)}
                 </div>
@@ -129,8 +145,8 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="grid gap-5 md:grid-cols-3">
               {[
-                {Icon:Bot,title:"Describe the issue",text:"The assistant asks useful questions and keeps the full context of the conversation."},
-                {Icon:TrendingUp,title:"Receive a clear estimate",text:"Pricing uses HVAC service data, location, complexity, and urgency—not guesswork."},
+                {Icon:Bot,title:"Describe the issue",text:"The multilingual assistant asks useful questions and keeps the full context of the conversation."},
+                {Icon:TrendingUp,title:"Receive a local estimate",text:"Pricing uses regional HVAC data, location, complexity, and urgency—not guesswork."},
                 {Icon:CalendarCheck,title:"Book the right specialist",text:"See nearby qualified technicians and their earliest compatible availability."},
               ].map(({Icon,title,text},index)=>(
                 <div key={title} className="rounded-2xl border border-slate-100 p-6 transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-slate-100">
@@ -145,9 +161,9 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
         <section id="pricing" className="bg-slate-950 py-20 text-white sm:py-24">
           <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-400">Transparent by design</span>
-              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Know the estimated cost before you book</h2>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-slate-400">QuoteAI shows the currency, estimated range, and confidence clearly. The final intervention price remains visible throughout the service workflow.</p>
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-400">MENA-ready pricing</span>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Regional pricing clients can understand</h2>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-slate-400">QuoteAI adapts the estimate to the customer’s market and displays the currency, price range, and confidence clearly. The final intervention price remains visible throughout the service workflow.</p>
             </div>
             <div className="rounded-3xl border border-slate-700 bg-slate-900 p-6 sm:p-8">
               <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15"><Sparkles className="h-5 w-5 text-blue-400"/></div><div><div className="font-bold">Start with an AI estimate</div><div className="text-xs text-slate-400">No phone call required</div></div></div>
@@ -162,8 +178,8 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
         <section id="about" className="py-20 sm:py-24">
           <div className="mx-auto max-w-4xl px-4 text-center sm:px-6">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50"><Wrench className="h-5 w-5 text-emerald-600"/></div>
-            <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950">Built for clients and HVAC professionals</h2>
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-600">Clients gain speed and clarity. Technicians receive relevant requests, manage pricing, availability, appointments, and conversations from one professional workspace.</p>
+            <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950">A professional HVAC platform dedicated to MENA</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-600">Designed around the region’s languages, currencies, geography, and HVAC service needs. Clients gain speed and clarity while technicians manage relevant requests, pricing, availability, appointments, and conversations from one workspace.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <button onClick={()=>onSelect("client")} className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90">Get a quote</button>
               <button onClick={()=>onSelect("technician")} className="h-11 rounded-xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Join as a technician</button>
@@ -175,7 +191,7 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
       <footer className="border-t border-slate-100 bg-slate-50 py-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-xs text-slate-500 sm:flex-row sm:px-6 lg:px-8">
           <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-primary"/><span className="font-bold text-slate-700">QuoteAI</span></div>
-          <span>Professional HVAC quoting, matching, and scheduling.</span>
+          <span>Professional HVAC quoting, matching, and scheduling for the MENA region.</span>
         </div>
       </footer>
     </div>
