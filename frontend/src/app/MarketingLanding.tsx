@@ -9,7 +9,7 @@ import { useInterfaceLanguage } from "./InterfaceLanguage";
 export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void }) {
   const { text:t } = useInterfaceLanguage();
   return (
-    <div className="min-h-screen overflow-x-hidden bg-white text-foreground">
+    <div className="marketing-page min-h-screen overflow-x-hidden bg-white text-foreground">
       <nav className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <a href="#top" className="flex items-center gap-2.5" aria-label={t("landing.homeAria")}>

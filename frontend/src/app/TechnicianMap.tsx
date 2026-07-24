@@ -32,6 +32,23 @@ function MapViewport({ points, selected }: { points: Array<[number, number]>; se
   const map = useMap();
 
   useEffect(() => {
+    const container = map.getContainer();
+    const refreshSize = () => map.invalidateSize({ animate: false });
+    const observer = new ResizeObserver(refreshSize);
+    observer.observe(container);
+    const frame = window.requestAnimationFrame(refreshSize);
+    const timer = window.setTimeout(refreshSize, 250);
+    window.addEventListener("orientationchange", refreshSize);
+
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      window.removeEventListener("orientationchange", refreshSize);
+    };
+  }, [map]);
+
+  useEffect(() => {
     if (points.length === 1) map.setView(points[0], 13);
     if (points.length > 1) map.fitBounds(new LatLngBounds(points), { padding: [45, 45], maxZoom: 14 });
   }, [map, points]);
