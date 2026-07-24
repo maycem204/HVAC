@@ -21,6 +21,7 @@ import type {
 } from "./domain";
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { Avatar, Badge, ConfidenceBar, detectFaultType, NotificationPanel, ProfileModal, technicianMatchesFault } from "./SharedUi";
+import { useInterfaceLanguage } from "./InterfaceLanguage";
 
 export function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser, locationTracking, locating, locationError, onToggleLocation, onClearLocationError }:
   { user: AppUser; location: UserLocation | null; technicians: Technician[]; onLogout: () => void; onUpdateUser: (u: AppUser) => void; locationTracking:boolean; locating:boolean; locationError:string; onToggleLocation:()=>void; onClearLocationError:()=>void }) {
@@ -149,7 +150,8 @@ function readableDistance(distanceKm: number | null) {
 }
 
 function ClientChat({ technicians, location, onContact, onAppointmentCreated }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void; onAppointmentCreated: (appointment: Appointment) => void }) {
-  const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro." }]);
+  const { language:interfaceLanguage } = useInterfaceLanguage();
+  const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:interfaceLanguage==="fr"?"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro.":"Hello! Describe your HVAC issue or use the microphone." }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number; currency:string; subtotal:number; minimumAdjustment:number; extraction:any; lines:any[]; matches:any[] }|null>(null);
@@ -172,6 +174,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   // spécialistes exacts restent prioritaires, puis les généralistes peuvent diagnostiquer.
   const matchingTechs = specialists.length > 0 ? specialists : availableTechs;
   const urgency = /urgent|urgence|fumée|fumee|odeur de brûlé|odeur de brule|fuite|étincelle|etincelle/i.test(messages.map((message)=>message.text).join(" ")) ? "critical" : /rapidement|aujourd'hui|vite|en panne complète/i.test(messages.map((message)=>message.text).join(" ")) ? "urgent" : "normal";
+  useEffect(()=>setMessages((current)=>current.length===1&&current[0].role==="bot"?[{role:"bot",text:interfaceLanguage==="fr"?"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro.":"Hello! Describe your HVAC issue or use the microphone."}]:current),[interfaceLanguage]);
   async function loadSuggestedSlots(request: ScheduleRequest = scheduleRequest) {
     setSlotsLoading(true); setSelectedSlot(null); setSlotsError(""); setVisibleSlotCount(4);
     try {
@@ -189,7 +192,8 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
     if (directSchedule) {
       setScheduleRequest(directSchedule);
       if (showSlots) {
-        setMessages([...nextMessages,{role:"bot",text:"Je mets à jour la recherche selon votre disponibilité."}]);
+        const reply=/[\u0600-\u06ff]/.test(text)?"سأحدّث البحث وفقًا لموعدك المتاح.":/\b(today|tomorrow|morning|afternoon|evening|next week)\b/i.test(text)?"I’m updating the search based on your availability.":"Je mets à jour la recherche selon votre disponibilité.";
+        setMessages([...nextMessages,{role:"bot",text:reply}]);
         setInput("");
         void loadSuggestedSlots(directSchedule);
         return;
