@@ -6,6 +6,7 @@ import type { AppUser, Role, Technician, UserLocation } from "./domain";
 import { mapTechnician } from "./mappers";
 import { AuthForm, LocationModal } from "./PublicViews";
 import { MarketingLanding } from "./MarketingLanding";
+import { InterfaceLanguageProvider, InterfaceLanguageSelector } from "./InterfaceLanguage";
 import { ClientDashboard } from "./ClientDashboard";
 import { TechDashboard } from "./TechnicianDashboard";
 
@@ -195,9 +196,10 @@ export default function App() {
       : <TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} locationTracking={locationTracking} locating={locationLocating} locationError={locationError} onToggleLocation={toggleLiveLocation} onClearLocationError={()=>setLocationError("")}/>;
 
   return (
-    <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
-      <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
-      <Routes>
+    <InterfaceLanguageProvider>
+      <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
+        <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
+        <Routes>
         <Route path="/" element={<MarketingLanding onSelect={selectRole}/>}/>
         <Route path="/connexion/client" element={user ? <Navigate to={dashboardPath(user)} replace/> : <AuthForm role="client" onBack={()=>navigate("/")} onLogin={handleLogin}/>}/>
         <Route path="/connexion/technicien" element={user ? <Navigate to={dashboardPath(user)} replace/> : <AuthForm role="technician" onBack={()=>navigate("/")} onLogin={handleLogin}/>}/>
@@ -207,7 +209,9 @@ export default function App() {
         <Route path="/technicien" element={<Navigate to="/technicien/leads" replace/>}/>
         <Route path="/technicien/:tab" element={technicianRoute}/>
         <Route path="*" element={<Navigate to={user ? dashboardPath(user) : "/"} replace/>}/>
-      </Routes>
-    </div>
+        </Routes>
+        <InterfaceLanguageSelector/>
+      </div>
+    </InterfaceLanguageProvider>
   );
 }

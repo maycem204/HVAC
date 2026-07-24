@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCheck, MessageSquare, Phone, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { realtimeSocket } from "../lib/socket";
+import { useInterfaceLanguage } from "./InterfaceLanguage";
 
 type TechnicianSummary = { id: number; name: string; avatar?: string };
 type Conversation = {
@@ -34,6 +35,7 @@ function ProfileAvatar({ value, name, size = "small" }: { value?: string; name: 
 
 export default function ConversationsPanel({ initialTechnician, onClose, onContacted }:
   { initialTechnician?: TechnicianSummary | null; onClose?: () => void; onContacted?: (id: number) => void }) {
+  const { language } = useInterfaceLanguage();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -140,8 +142,8 @@ export default function ConversationsPanel({ initialTechnician, onClose, onConta
               return (
                 <div key={message.id} className={`flex w-full ${mine ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[75%] px-3 py-2 rounded-xl text-sm shadow-sm ${mine ? "bg-blue-100 text-slate-900 rounded-br-sm ml-auto" : "bg-white text-slate-900 border border-gray-100 rounded-bl-sm mr-auto"}`}>
-                    <div className="whitespace-pre-wrap break-words">{message.body}</div>
-                    <div className="text-[10px] mt-1 text-right flex items-center justify-end gap-1 text-gray-500">{new Date(message.created_at).toLocaleTimeString("fr-FR", { hour:"2-digit", minute:"2-digit" })}{mine&&<CheckCheck className={`w-3.5 h-3.5 ${message.read_at?"text-blue-600":"text-gray-400"}`}/>}</div>
+                    <div data-language-neutral="true" className="whitespace-pre-wrap break-words">{message.body}</div>
+                    <div className="text-[10px] mt-1 text-right flex items-center justify-end gap-1 text-gray-500">{new Date(message.created_at).toLocaleTimeString(language==="fr"?"fr-FR":"en-GB", { hour:"2-digit", minute:"2-digit" })}{mine&&<CheckCheck className={`w-3.5 h-3.5 ${message.read_at?"text-blue-600":"text-gray-400"}`}/>}</div>
                   </div>
                 </div>
               );

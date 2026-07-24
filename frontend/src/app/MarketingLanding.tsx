@@ -4,8 +4,10 @@ import {
   Wrench, X, Zap,
 } from "lucide-react";
 import type { Role } from "./domain";
+import { useInterfaceLanguage } from "./InterfaceLanguage";
 
 export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void }) {
+  const { text:t } = useInterfaceLanguage();
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-foreground">
       <nav className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
@@ -18,17 +20,17 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           </a>
 
           <div className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
-            <a href="#features" className="transition-colors hover:text-foreground">Features</a>
-            <a href="#pricing" className="transition-colors hover:text-foreground">Pricing</a>
-            <a href="#about" className="transition-colors hover:text-foreground">About</a>
+            <a href="#features" className="transition-colors hover:text-foreground">{t("Fonctionnalités","Features")}</a>
+            <a href="#pricing" className="transition-colors hover:text-foreground">{t("Tarification","Pricing")}</a>
+            <a href="#about" className="transition-colors hover:text-foreground">{t("À propos","About")}</a>
           </div>
 
           <div className="flex items-center gap-2">
             <button onClick={()=>onSelect("client")} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:px-4 sm:text-sm">
-              Espace client
+              {t("Espace client","Client space")}
             </button>
             <button onClick={()=>onSelect("technician")} className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-semibold text-slate-700 transition-colors hover:bg-slate-100 sm:px-4 sm:text-sm">
-              Espace technicien
+              {t("Espace technicien","Technician space")}
             </button>
           </div>
         </div>
@@ -40,26 +42,26 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 py-20 sm:px-6 sm:py-28 lg:grid-cols-[1.02fr_.98fr] lg:px-8 lg:py-32">
             <div>
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                <Globe2 className="h-3.5 w-3.5"/> Built for the MENA HVAC market
+                <Globe2 className="h-3.5 w-3.5"/> {t("Conçu pour le marché HVAC de la région MENA","Built for the MENA HVAC market")}
               </div>
               <h1 className="max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-6xl">
-                Generate HVAC quotes in seconds with AI
+                {t("Générez des devis HVAC en quelques secondes grâce à l’IA","Generate HVAC quotes in seconds with AI")}
               </h1>
               <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-                AI-powered HVAC estimates adapted to MENA markets, local currencies, and regional service realities. Describe the issue and connect with the right available specialist—without waiting for callbacks.
+                {t("Des estimations HVAC par IA adaptées aux marchés MENA, aux devises locales et aux réalités régionales. Décrivez le problème et trouvez le bon spécialiste disponible, sans attendre de rappel.","AI-powered HVAC estimates adapted to MENA markets, local currencies, and regional service realities. Describe the issue and connect with the right available specialist—without waiting for callbacks.")}
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <button onClick={()=>onSelect("client")} className="group inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:-translate-y-0.5 hover:bg-primary/90">
-                  Get a quote <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1"/>
+                  {t("Obtenir un devis","Get a quote")} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1"/>
                 </button>
                 <a href="#features" className="inline-flex h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                  See how it works
+                  {t("Découvrir le fonctionnement","See how it works")}
                 </a>
               </div>
               <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-slate-500">
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>Instant estimate</span>
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>Local currency</span>
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>Qualified specialists</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("Estimation instantanée","Instant estimate")}</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("Devise locale","Local currency")}</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("Spécialistes qualifiés","Qualified specialists")}</span>
               </div>
             </div>
 

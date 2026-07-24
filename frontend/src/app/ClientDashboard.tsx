@@ -275,7 +275,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         {messages.map((m,i)=>(
           <div key={i} className={`flex gap-3 ${m.role==="user"?"justify-end":"justify-start"}`}>
             {m.role==="bot"&&<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5"><Zap className="w-3.5 h-3.5 text-white"/></div>}
-            <div dir={/[\u0600-\u06ff]/.test(m.text)?"rtl":"ltr"} className={`max-w-[78%] text-sm px-4 py-3 rounded-2xl leading-relaxed shadow-sm ${m.role==="user"?"bg-primary text-white rounded-br-sm":"bg-white text-foreground rounded-bl-sm border border-gray-100"}`}>{m.text}</div>
+            <div data-language-neutral="true" dir={/[\u0600-\u06ff]/.test(m.text)?"rtl":"ltr"} className={`max-w-[78%] text-sm px-4 py-3 rounded-2xl leading-relaxed shadow-sm ${m.role==="user"?"bg-primary text-white rounded-br-sm":"bg-white text-foreground rounded-bl-sm border border-gray-100"}`}>{m.text}</div>
           </div>
         ))}
         {loading&&<div className="flex gap-3"><div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><Zap className="w-3.5 h-3.5 text-white"/></div><div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center shadow-sm">{[0,150,300].map((d)=><span key={d} className="w-2 h-2 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay:`${d}ms` }}/>)}</div></div>}
