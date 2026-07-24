@@ -20,13 +20,14 @@ class PricingOrchestrator {
     if (vagueRequest) return vagueRequest;
 
     const responseLanguage = this.detectResponseLanguage(text, history);
+    const currentDate = this.currentDate();
     let extraction;
     try {
       extraction = await this.llm.extract({
         text,
         history: history.slice(-10),
         clientCountry,
-        currentDate: new Date().toISOString().slice(0, 10),
+        currentDate,
       });
     } catch (error) {
       return this.human(text, null, clientId, "llm_unavailable", null, error);
@@ -35,6 +36,7 @@ class PricingOrchestrator {
     else if (requireResolvedCountry) extraction.country = "";
     extraction.response_language = responseLanguage;
     this.normalizeExtraction(extraction);
+    extraction.season = this.seasonForDate(extraction.schedule_request?.date || currentDate, text);
     this.enrichFilterQuote(extraction, text, history);
     this.enrichKnownInterventions(extraction, text, history);
     if (extraction.clarification_needed) {
@@ -344,6 +346,28 @@ class PricingOrchestrator {
       if (/repar|remplac|maintenance|diagnostic/.test(normalized(fault.intervention_type))) fault.intervention_type = "Reparation";
       else if (/install|pose/.test(normalized(fault.intervention_type))) fault.intervention_type = "Installation";
     }
+  }
+
+  currentDate(now = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Africa/Tunis",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+  }
+
+  seasonForDate(date, requestText = "") {
+    if (/\b(?:canicule|vague de chaleur|heatwave)\b/i.test(String(requestText))) {
+      return "Période de canicule / vague de chaleur";
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ""));
+    const month = match ? Number(match[2]) : Number(this.currentDate().slice(5, 7));
+    if (month >= 6 && month <= 9) return "Haute saison été (clim)";
+    if (month === 12 || month <= 2) return "Haute saison hiver (chauffage)";
+    return "Saison intermédiaire";
   }
 
   equipmentMatches(row, fault) {

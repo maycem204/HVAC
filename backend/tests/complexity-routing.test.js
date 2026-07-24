@@ -75,6 +75,14 @@ test("normalise les synonymes tarifaires du LLM", () => {
   assert.equal(extraction.season, "Haute saison hiver (chauffage)");
 });
 
+test("calcule la saison depuis la date plutôt que depuis la réponse du LLM", () => {
+  const orchestrator = new PricingOrchestrator({ repository: {}, embeddings: {}, llm: {} });
+  assert.equal(orchestrator.seasonForDate("2026-07-24"), "Haute saison été (clim)");
+  assert.equal(orchestrator.seasonForDate("2026-01-15"), "Haute saison hiver (chauffage)");
+  assert.equal(orchestrator.seasonForDate("2026-04-10"), "Saison intermédiaire");
+  assert.equal(orchestrator.seasonForDate("2026-07-24", "intervention pendant la canicule"), "Période de canicule / vague de chaleur");
+});
+
 test("n'affecte pas un technicien pour une panne de configuration", async () => {
   let receivedEntry;
   const orchestrator = new PricingOrchestrator({
