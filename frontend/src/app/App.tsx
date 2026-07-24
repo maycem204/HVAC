@@ -4,7 +4,8 @@ import api from "../lib/api";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
 import type { AppUser, Role, Technician, UserLocation } from "./domain";
 import { mapTechnician } from "./mappers";
-import { AuthForm, Landing, LocationModal } from "./PublicViews";
+import { AuthForm, LocationModal } from "./PublicViews";
+import { MarketingLanding } from "./MarketingLanding";
 import { ClientDashboard } from "./ClientDashboard";
 import { TechDashboard } from "./TechnicianDashboard";
 
@@ -197,7 +198,7 @@ export default function App() {
     <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
       <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
       <Routes>
-        <Route path="/" element={user ? <Navigate to={dashboardPath(user)} replace/> : <Landing onSelect={selectRole}/>}/>
+        <Route path="/" element={user ? <Navigate to={dashboardPath(user)} replace/> : <MarketingLanding onSelect={selectRole}/>}/>
         <Route path="/connexion/client" element={user ? <Navigate to={dashboardPath(user)} replace/> : <AuthForm role="client" onBack={()=>navigate("/")} onLogin={handleLogin}/>}/>
         <Route path="/connexion/technicien" element={user ? <Navigate to={dashboardPath(user)} replace/> : <AuthForm role="technician" onBack={()=>navigate("/")} onLogin={handleLogin}/>}/>
         <Route path="/localisation" element={user ? <LocationModal role={user.role} user={user} onDone={handleLocation}/> : <Navigate to="/" replace/>}/>
