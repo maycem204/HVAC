@@ -9,7 +9,7 @@ import { useInterfaceLanguage } from "./InterfaceLanguage";
 export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void }) {
   const { text:t } = useInterfaceLanguage();
   return (
-    <div data-language-neutral="true" className="min-h-screen overflow-x-hidden bg-white text-foreground">
+    <div className="min-h-screen overflow-x-hidden bg-white text-foreground">
       <nav className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex h-18 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <a href="#top" className="flex items-center gap-2.5" aria-label="QuoteAI — accueil">
@@ -20,17 +20,17 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           </a>
 
           <div className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
-            <a href="#features" className="transition-colors hover:text-foreground">{t("Fonctionnalités","Features")}</a>
-            <a href="#pricing" className="transition-colors hover:text-foreground">{t("Tarification","Pricing")}</a>
-            <a href="#about" className="transition-colors hover:text-foreground">{t("À propos","About")}</a>
+            <a href="#features" className="transition-colors hover:text-foreground">{t("interface.features")}</a>
+            <a href="#pricing" className="transition-colors hover:text-foreground">{t("interface.pricing")}</a>
+            <a href="#about" className="transition-colors hover:text-foreground">{t("interface.about")}</a>
           </div>
 
           <div className="flex items-center gap-2">
             <button onClick={()=>onSelect("client")} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:px-4 sm:text-sm">
-              {t("Espace client","Client space")}
+              {t("interface.client.space")}
             </button>
             <button onClick={()=>onSelect("technician")} className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[10px] font-semibold text-slate-700 transition-colors hover:bg-slate-100 sm:px-4 sm:text-sm">
-              {t("Espace technicien","Technician space")}
+              {t("interface.technician.space")}
             </button>
           </div>
         </div>
@@ -42,26 +42,26 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 py-20 sm:px-6 sm:py-28 lg:grid-cols-[1.02fr_.98fr] lg:px-8 lg:py-32">
             <div>
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                <Globe2 className="h-3.5 w-3.5"/> {t("Conçu pour le marché HVAC de la région MENA","Built for the MENA HVAC market")}
+                <Globe2 className="h-3.5 w-3.5"/> {t("interface.built.for.the.mena.hvac.market")}
               </div>
               <h1 className="max-w-3xl text-4xl font-black leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl lg:text-6xl">
-                {t("Générez des devis HVAC en quelques secondes grâce à l’IA","Generate HVAC quotes in seconds with AI")}
+                {t("interface.generate.hvac.quotes.in.seconds.with.ai")}
               </h1>
               <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">
-                {t("Des estimations HVAC par IA adaptées aux marchés MENA, aux devises locales et aux réalités régionales. Décrivez le problème et trouvez le bon spécialiste disponible, sans attendre de rappel.","AI-powered HVAC estimates adapted to MENA markets, local currencies, and regional service realities. Describe the issue and connect with the right available specialist—without waiting for callbacks.")}
+                {t("interface.ai.powered.hvac.estimates.adapted.to.mena.markets.local.currencies.and.r")}
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <button onClick={()=>onSelect("client")} className="group inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-bold text-white shadow-lg shadow-blue-200 transition-all hover:-translate-y-0.5 hover:bg-primary/90">
-                  {t("Obtenir un devis","Get a quote")} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1"/>
+                  {t("interface.get.a.quote")} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1"/>
                 </button>
                 <a href="#features" className="inline-flex h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                  {t("Découvrir le fonctionnement","See how it works")}
+                  {t("interface.see.how.it.works")}
                 </a>
               </div>
               <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-slate-500">
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("Estimation instantanée","Instant estimate")}</span>
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("Devise locale","Local currency")}</span>
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("Spécialistes qualifiés","Qualified specialists")}</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("interface.instant.estimate")}</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("interface.local.currency")}</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-500"/>{t("interface.qualified.specialists")}</span>
               </div>
             </div>
 
@@ -71,29 +71,29 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50"><Bot className="h-4.5 w-4.5 text-primary"/></div>
-                    <div><div className="text-sm font-bold">{t("Assistant de devis IA","AI quote assistant")}</div><div className="text-[11px] text-emerald-600">{t("En ligne · réponse instantanée","Online · replies instantly")}</div></div>
+                    <div><div className="text-sm font-bold">{t("interface.ai.quote.assistant")}</div><div className="text-[11px] text-emerald-600">{t("interface.online.replies.instantly")}</div></div>
                   </div>
                   <ShieldCheck className="h-5 w-5 text-slate-400"/>
                 </div>
                 <div className="space-y-4 bg-slate-50/70 p-5">
                   <div className="max-w-[88%] rounded-2xl rounded-tl-md bg-white p-3.5 text-sm leading-6 text-slate-600 shadow-sm">
-                    {t("Expliquez ce qui se passe avec votre équipement HVAC.","Tell me what is happening with your HVAC equipment.")}
+                    {t("interface.tell.me.what.is.happening.with.your.hvac.equipment")}
                   </div>
                   <div className="ml-auto max-w-[88%] rounded-2xl rounded-tr-md bg-primary p-3.5 text-sm leading-6 text-white">
-                    {t("Mon climatiseur split fait beaucoup de bruit au démarrage.","My split AC makes a loud noise when it starts.")}
+                    {t("interface.my.split.ac.makes.a.loud.noise.when.it.starts")}
                   </div>
                   <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                     <div className="mb-3 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-500">{t("DEVIS ESTIMATIF","ESTIMATED QUOTE")}</span>
-                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{t("Confiance élevée","High confidence")}</span>
+                      <span className="text-xs font-semibold text-slate-500">{t("interface.estimated.quote")}</span>
+                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{t("interface.high.confidence")}</span>
                     </div>
                     <div className="text-3xl font-black tracking-tight text-slate-950">139.05 <span className="text-base font-bold text-slate-500">TND</span></div>
-                    <div className="mt-1 text-xs text-slate-500">{t("Fourchette estimée","Estimated range")}: 127.93–150.17 TND</div>
+                    <div className="mt-1 text-xs text-slate-500">{t("interface.estimated.range")}: 127.93–150.17 TND</div>
                     <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full w-[88%] rounded-full bg-emerald-500"/></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-slate-100 bg-white p-3"><Clock3 className="mb-2 h-4 w-4 text-blue-600"/><div className="text-xs font-bold">{t("Prochaine disponibilité","Next available")}</div><div className="mt-0.5 text-[11px] text-slate-500">{t("Aujourd’hui","Today")}, 14:00</div></div>
-                    <div className="rounded-xl border border-slate-100 bg-white p-3"><MapPin className="mb-2 h-4 w-4 text-emerald-600"/><div className="text-xs font-bold">{t("Spécialiste le plus proche","Nearest specialist")}</div><div className="mt-0.5 text-[11px] text-slate-500">400 m {t("à proximité","away")}</div></div>
+                    <div className="rounded-xl border border-slate-100 bg-white p-3"><Clock3 className="mb-2 h-4 w-4 text-blue-600"/><div className="text-xs font-bold">{t("interface.next.available")}</div><div className="mt-0.5 text-[11px] text-slate-500">{t("interface.today")}, 14:00</div></div>
+                    <div className="rounded-xl border border-slate-100 bg-white p-3"><MapPin className="mb-2 h-4 w-4 text-emerald-600"/><div className="text-xs font-bold">{t("interface.nearest.specialist")}</div><div className="mt-0.5 text-[11px] text-slate-500">400 m {t("interface.away")}</div></div>
                   </div>
                 </div>
               </div>
@@ -104,9 +104,9 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
         <section className="border-y border-slate-100 bg-white py-10">
           <div className="mx-auto grid max-w-7xl gap-4 px-4 sm:px-6 md:grid-cols-3 lg:px-8">
             {[
-              {Icon:Coins,title:t("Tarification adaptée au marché local","Local market pricing"),text:t("Les estimations utilisent des données HVAC régionales et affichent la devise locale appropriée.","Estimates use regional HVAC data and display the appropriate local currency.")},
-              {Icon:Languages,title:t("Arabe, français et anglais","Arabic, French & English"),text:t("Un parcours client plus clair dans les langues les plus utilisées dans la région MENA.","A clearer customer journey across the languages most used throughout MENA.")},
-              {Icon:MapPin,title:t("Mise en relation géolocalisée","Location-aware matching"),text:t("Les clients trouvent des techniciens qualifiés à proximité dans leur zone d’intervention réelle.","Clients find qualified nearby technicians within their actual service area.")},
+              {Icon:Coins,title:t("interface.local.market.pricing"),text:t("interface.estimates.use.regional.hvac.data.and.display.the.appropriate.local.curre")},
+              {Icon:Languages,title:t("interface.arabic.french.english"),text:t("interface.a.clearer.customer.journey.across.the.languages.most.used.throughout.men")},
+              {Icon:MapPin,title:t("interface.location.aware.matching"),text:t("interface.clients.find.qualified.nearby.technicians.within.their.actual.service.ar")},
             ].map(({Icon,title,text})=>(
               <div key={title} className="flex items-start gap-3 rounded-2xl p-4">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50"><Icon className="h-4.5 w-4.5 text-primary"/></div>
@@ -119,24 +119,24 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
         <section id="features" className="border-y border-slate-100 bg-slate-50/70 py-20 sm:py-24">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-2xl text-center">
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-primary">{t("De la complexité à la clarté","From friction to clarity")}</span>
-              <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{t("Les devis ne doivent pas ralentir votre activité","Quoting should not slow your business down")}</h2>
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-primary">{t("interface.from.friction.to.clarity")}</span>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{t("interface.quoting.should.not.slow.your.business.down")}</h2>
             </div>
             <div className="mt-14 grid gap-6 lg:grid-cols-2">
               <div className="rounded-3xl border border-red-100 bg-white p-6 sm:p-8">
                 <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-red-50"><X className="h-5 w-5 text-red-500"/></div>
-                <h3 className="text-xl font-bold">{t("L’ancienne méthode","The old way")}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{t("Les devis lents, manuels et sujets aux erreurs font perdre du temps et créent de l’incertitude.","Slow, manual, and error-prone quotes cost time and create uncertainty for everyone.")}</p>
+                <h3 className="text-xl font-bold">{t("interface.the.old.way")}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{t("interface.slow.manual.and.error.prone.quotes.cost.time.and.create.uncertainty.for.")}</p>
                 <div className="mt-6 space-y-3">
-                  {[t("Appels répétés et descriptions incomplètes","Repeated calls and incomplete descriptions"),t("Tarification incohérente et calculs manuels","Inconsistent pricing and manual calculations"),t("Des heures perdues à chercher le bon technicien disponible","Hours lost finding the right available technician")].map((item)=><div key={item} className="flex items-start gap-3 rounded-xl bg-red-50/60 p-3 text-sm text-slate-600"><X className="mt-0.5 h-4 w-4 shrink-0 text-red-400"/>{item}</div>)}
+                  {[t("interface.repeated.calls.and.incomplete.descriptions"),t("interface.inconsistent.pricing.and.manual.calculations"),t("interface.hours.lost.finding.the.right.available.technician")].map((item)=><div key={item} className="flex items-start gap-3 rounded-xl bg-red-50/60 p-3 text-sm text-slate-600"><X className="mt-0.5 h-4 w-4 shrink-0 text-red-400"/>{item}</div>)}
                 </div>
               </div>
               <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm sm:p-8">
                 <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50"><Zap className="h-5 w-5 text-emerald-600"/></div>
-                <h3 className="text-xl font-bold">{t("La méthode QuoteAI","The QuoteAI way")}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{t("La tarification instantanée par IA transforme une description claire du problème en demande d’intervention exploitable et adaptée au marché MENA du client.","Instant AI-powered pricing turns a clear issue description into an actionable service request adapted to the customer’s MENA market.")}</p>
+                <h3 className="text-xl font-bold">{t("interface.the.quoteai.way")}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{t("interface.instant.ai.powered.pricing.turns.a.clear.issue.description.into.an.actio")}</p>
                 <div className="mt-6 space-y-3">
-                  {[t("Clarification contextuelle des problèmes HVAC","Context-aware HVAC issue clarification"),t("Estimations transparentes dans la bonne devise locale","Transparent estimates in the correct local currency"),t("Spécialistes à proximité classés par compétence et disponibilité","Nearby specialists ranked by skill and availability")].map((item)=><div key={item} className="flex items-start gap-3 rounded-xl bg-emerald-50/60 p-3 text-sm text-slate-700"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"/>{item}</div>)}
+                  {[t("interface.context.aware.hvac.issue.clarification"),t("interface.transparent.estimates.in.the.correct.local.currency"),t("interface.nearby.specialists.ranked.by.skill.and.availability")].map((item)=><div key={item} className="flex items-start gap-3 rounded-xl bg-emerald-50/60 p-3 text-sm text-slate-700"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"/>{item}</div>)}
                 </div>
               </div>
             </div>
@@ -147,9 +147,9 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="grid gap-5 md:grid-cols-3">
               {[
-                {Icon:Bot,title:t("Décrivez le problème","Describe the issue"),text:t("L’assistant multilingue pose des questions utiles et conserve tout le contexte de la conversation.","The multilingual assistant asks useful questions and keeps the full context of the conversation.")},
-                {Icon:TrendingUp,title:t("Recevez une estimation locale","Receive a local estimate"),text:t("La tarification utilise les données HVAC régionales, la localisation, la complexité et l’urgence, sans estimation arbitraire.","Pricing uses regional HVAC data, location, complexity, and urgency—not guesswork.")},
-                {Icon:CalendarCheck,title:t("Réservez le bon spécialiste","Book the right specialist"),text:t("Consultez les techniciens qualifiés à proximité et leur première disponibilité compatible.","See nearby qualified technicians and their earliest compatible availability.")},
+                {Icon:Bot,title:t("interface.describe.the.issue"),text:t("interface.the.multilingual.assistant.asks.useful.questions.and.keeps.the.full.cont")},
+                {Icon:TrendingUp,title:t("interface.receive.a.local.estimate"),text:t("interface.pricing.uses.regional.hvac.data.location.complexity.and.urgency.not.gues")},
+                {Icon:CalendarCheck,title:t("interface.book.the.right.specialist"),text:t("interface.see.nearby.qualified.technicians.and.their.earliest.compatible.availabil")},
               ].map(({Icon,title,text},index)=>(
                 <div key={title} className="rounded-2xl border border-slate-100 p-6 transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-slate-100">
                   <div className="mb-5 flex items-center justify-between"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50"><Icon className="h-5 w-5 text-primary"/></div><span className="text-xs font-black text-slate-300">0{index+1}</span></div>
@@ -163,16 +163,16 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
         <section id="pricing" className="bg-slate-950 py-20 text-white sm:py-24">
           <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-400">{t("Tarification adaptée à la région MENA","MENA-ready pricing")}</span>
-              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t("Une tarification régionale claire pour les clients","Regional pricing clients can understand")}</h2>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-slate-400">{t("QuoteAI adapte l’estimation au marché du client et affiche clairement la devise, la fourchette de prix et le niveau de confiance. Le prix final de l’intervention reste visible pendant tout le parcours.","QuoteAI adapts the estimate to the customer’s market and displays the currency, price range, and confidence clearly. The final intervention price remains visible throughout the service workflow.")}</p>
+              <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-400">{t("interface.mena.ready.pricing")}</span>
+              <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{t("interface.regional.pricing.clients.can.understand")}</h2>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-slate-400">{t("interface.quoteai.adapts.the.estimate.to.the.customer.s.market.and.displays.the.cu")}</p>
             </div>
             <div className="rounded-3xl border border-slate-700 bg-slate-900 p-6 sm:p-8">
-              <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15"><Sparkles className="h-5 w-5 text-blue-400"/></div><div><div className="font-bold">{t("Commencez par une estimation IA","Start with an AI estimate")}</div><div className="text-xs text-slate-400">{t("Aucun appel téléphonique nécessaire","No phone call required")}</div></div></div>
+              <div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/15"><Sparkles className="h-5 w-5 text-blue-400"/></div><div><div className="font-bold">{t("interface.start.with.an.ai.estimate")}</div><div className="text-xs text-slate-400">{t("interface.no.phone.call.required")}</div></div></div>
               <div className="mt-6 space-y-3 text-sm text-slate-300">
-                {[t("Fourchette de prix dans votre devise locale","Price range in your local currency"),t("Spécialistes correspondant au problème HVAC réel","Specialists matched to the actual HVAC issue"),t("Créneaux disponibles avant confirmation","Available appointment options before confirmation")].map((item)=><div key={item} className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-emerald-400"/>{item}</div>)}
+                {[t("interface.price.range.in.your.local.currency"),t("interface.specialists.matched.to.the.actual.hvac.issue"),t("interface.available.appointment.options.before.confirmation")].map((item)=><div key={item} className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-emerald-400"/>{item}</div>)}
               </div>
-              <button onClick={()=>onSelect("client")} className="mt-7 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-white text-sm font-bold text-slate-950 hover:bg-blue-50">{t("Essayer maintenant","Try now")} <ArrowRight className="h-4 w-4"/></button>
+              <button onClick={()=>onSelect("client")} className="mt-7 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-white text-sm font-bold text-slate-950 hover:bg-blue-50">{t("interface.try.now")} <ArrowRight className="h-4 w-4"/></button>
             </div>
           </div>
         </section>
@@ -180,11 +180,11 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
         <section id="about" className="py-20 sm:py-24">
           <div className="mx-auto max-w-4xl px-4 text-center sm:px-6">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50"><Wrench className="h-5 w-5 text-emerald-600"/></div>
-            <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950">{t("Une plateforme HVAC professionnelle dédiée à la région MENA","A professional HVAC platform dedicated to MENA")}</h2>
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-600">{t("Conçue autour des langues, devises, réalités géographiques et besoins HVAC de la région. Les clients gagnent en rapidité et en clarté, tandis que les techniciens gèrent les demandes pertinentes, les tarifs, les disponibilités, les rendez-vous et les conversations depuis un seul espace.","Designed around the region’s languages, currencies, geography, and HVAC service needs. Clients gain speed and clarity while technicians manage relevant requests, pricing, availability, appointments, and conversations from one workspace.")}</p>
+            <h2 className="mt-5 text-3xl font-black tracking-tight text-slate-950">{t("interface.a.professional.hvac.platform.dedicated.to.mena")}</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-slate-600">{t("interface.designed.around.the.region.s.languages.currencies.geography.and.hvac.ser")}</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <button onClick={()=>onSelect("client")} className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90">{t("Obtenir un devis","Get a quote")}</button>
-              <button onClick={()=>onSelect("technician")} className="h-11 rounded-xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50">{t("Rejoindre comme technicien","Join as a technician")}</button>
+              <button onClick={()=>onSelect("client")} className="h-11 rounded-xl bg-primary px-5 text-sm font-bold text-white hover:bg-primary/90">{t("interface.get.a.quote")}</button>
+              <button onClick={()=>onSelect("technician")} className="h-11 rounded-xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50">{t("interface.join.as.a.technician")}</button>
             </div>
           </div>
         </section>
@@ -193,7 +193,7 @@ export function MarketingLanding({ onSelect }: { onSelect: (role: Role) => void 
       <footer className="border-t border-slate-100 bg-slate-50 py-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-xs text-slate-500 sm:flex-row sm:px-6 lg:px-8">
           <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-primary"/><span className="font-bold text-slate-700">QuoteAI</span></div>
-          <span>{t("Devis, mise en relation et planification HVAC professionnels pour la région MENA.","Professional HVAC quoting, matching, and scheduling for the MENA region.")}</span>
+          <span>{t("interface.professional.hvac.quoting.matching.and.scheduling.for.the.mena.region")}</span>
         </div>
       </footer>
     </div>

@@ -22,6 +22,7 @@ import type {
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { Avatar, Badge, ConfidenceBar, detectFaultType, NotificationPanel, ProfileModal, technicianMatchesFault } from "./SharedUi";
 import { useInterfaceLanguage } from "./InterfaceLanguage";
+import i18n from "../i18n";
 
 export function ClientDashboard({ user, location, technicians, onLogout, onUpdateUser, locationTracking, locating, locationError, onToggleLocation, onClearLocationError }:
   { user: AppUser; location: UserLocation | null; technicians: Technician[]; onLogout: () => void; onUpdateUser: (u: AppUser) => void; locationTracking:boolean; locating:boolean; locationError:string; onToggleLocation:()=>void; onClearLocationError:()=>void }) {
@@ -88,7 +89,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI</span></div>
         <div className="relative z-10 flex items-center gap-2 sm:gap-3">
           {!locationTracking&&(location?.city||user.city)&&<div title="Localisation du profil" className="flex max-w-28 sm:max-w-none items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 shrink-0 text-gray-400"/><span className="truncate">{location?.city||user.city}</span></div>}
-          <button type="button" onClick={()=>onToggleLocation()} aria-pressed={locationTracking} className={`relative z-10 shrink-0 cursor-pointer touch-manipulation flex min-h-9 items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-blue-300 hover:bg-blue-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`pointer-events-none w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="pointer-events-none">{locationTracking?<><span className="hidden sm:inline">Désactiver ma position</span><span className="sm:hidden">Désactiver</span></>:<><span className="hidden sm:inline">Activer ma position</span><span className="sm:hidden">Activer</span></>}</span></button>
+          <button type="button" onClick={()=>onToggleLocation()} aria-pressed={locationTracking} className={`relative z-10 shrink-0 cursor-pointer touch-manipulation flex min-h-9 items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-blue-300 hover:bg-blue-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`pointer-events-none w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="pointer-events-none">{locationTracking?<><span className="hidden sm:inline">{i18n.t("interface.disable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.disable")}</span></>:<><span className="hidden sm:inline">{i18n.t("interface.enable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.enable")}</span></>}</span></button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-blue-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -150,7 +151,7 @@ function readableDistance(distanceKm: number | null) {
 }
 
 function ClientChat({ technicians, location, onContact, onAppointmentCreated }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void; onAppointmentCreated: (appointment: Appointment) => void }) {
-  const { language:interfaceLanguage } = useInterfaceLanguage();
+  const { language:interfaceLanguage, text:t } = useInterfaceLanguage();
   const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:interfaceLanguage==="fr"?"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro.":"Hello! Describe your HVAC issue or use the microphone." }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -274,12 +275,12 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><Zap className="w-4 h-4 text-white"/></div>
-          <div className="text-sm text-blue-800"><strong>Devis gratuit et instantané.</strong> Décrivez votre panne ou utilisez le micro.</div>
+          <div className="text-sm text-blue-800"><strong>{i18n.t("interface.free.instant.quote")}</strong> {i18n.t("interface.describe.your.issue.or.use.the.microphone")}</div>
         </div>
         {messages.map((m,i)=>(
           <div key={i} className={`flex gap-3 ${m.role==="user"?"justify-end":"justify-start"}`}>
             {m.role==="bot"&&<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 mt-0.5"><Zap className="w-3.5 h-3.5 text-white"/></div>}
-            <div data-language-neutral="true" dir={/[\u0600-\u06ff]/.test(m.text)?"rtl":"ltr"} className={`max-w-[78%] text-sm px-4 py-3 rounded-2xl leading-relaxed shadow-sm ${m.role==="user"?"bg-primary text-white rounded-br-sm":"bg-white text-foreground rounded-bl-sm border border-gray-100"}`}>{m.text}</div>
+            <div dir={/[\u0600-\u06ff]/.test(m.text)?"rtl":"ltr"} className={`max-w-[78%] text-sm px-4 py-3 rounded-2xl leading-relaxed shadow-sm ${m.role==="user"?"bg-primary text-white rounded-br-sm":"bg-white text-foreground rounded-bl-sm border border-gray-100"}`}>{m.text}</div>
           </div>
         ))}
         {loading&&<div className="flex gap-3"><div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><Zap className="w-3.5 h-3.5 text-white"/></div><div className="bg-white border border-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center shadow-sm">{[0,150,300].map((d)=><span key={d} className="w-2 h-2 rounded-full bg-primary/40 animate-bounce" style={{ animationDelay:`${d}ms` }}/>)}</div></div>}
@@ -295,7 +296,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
                   </div>
                 </div>
                 <div className="text-right text-xs opacity-80">
-                  <div>Confiance</div><div className="text-lg font-bold opacity-100">{quote.conf}%</div>
+                  <div>{i18n.t("interface.confidence")}</div><div className="text-lg font-bold opacity-100">{quote.conf}%</div>
                 </div>
               </div>
               <div className="mt-2 flex items-center gap-2">
@@ -303,39 +304,39 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
                   <div className="h-1 bg-white rounded-full" style={{ width:`${quote.conf}%` }}/>
                 </div>
               </div>
-              {quote.minimumAdjustment > 0 && <div className="mt-2 text-xs opacity-80">Minimum local de déplacement et d’intervention inclus.</div>}
+              {quote.minimumAdjustment > 0 && <div className="mt-2 text-xs opacity-80">{i18n.t("interface.local.travel.and.service.minimum.included")}</div>}
             </div>
             <details open className="border-t border-gray-100 bg-slate-50/70">
-              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">Vérifier l’analyse et le calcul</summary>
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">{i18n.t("interface.review.analysis.and.calculation")}</summary>
               <div className="px-4 pb-4 space-y-3 text-xs text-slate-700">
                 <div className="grid grid-cols-2 gap-2">
-                  <div><span className="text-slate-500">Pays :</span> {quote.extraction.country || "Non déterminé"}</div>
-                  <div><span className="text-slate-500">Urgence :</span> {quote.extraction.urgency || "Non déterminée"}</div>
-                  <div><span className="text-slate-500">Complexité :</span> {quote.extraction.complexity || "Non déterminée"}</div>
-                  <div><span className="text-slate-500">Saison :</span> {quote.extraction.season || "Non déterminée"}</div>
-                  <div><span className="text-slate-500">Marque :</span> {quote.extraction.brand || "Non indiquée"}</div>
-                  <div><span className="text-slate-500">Âge :</span> {quote.extraction.equipment_age_years != null ? `${quote.extraction.equipment_age_years} an(s)` : quote.extraction.equipment_age_band || "Non indiqué"}</div>
+                  <div><span className="text-slate-500">{t("interface.country")} :</span> {quote.extraction.country || t("interface.not.determined")}</div>
+                  <div><span className="text-slate-500">{t("interface.urgency")} :</span> {quote.extraction.urgency || t("interface.not.determined")}</div>
+                  <div><span className="text-slate-500">{t("interface.complexity")} :</span> {quote.extraction.complexity || t("interface.not.determined")}</div>
+                  <div><span className="text-slate-500">{t("interface.season")} :</span> {quote.extraction.season || t("interface.not.determined")}</div>
+                  <div><span className="text-slate-500">{t("interface.brand")} :</span> {quote.extraction.brand || t("interface.not.provided")}</div>
+                  <div><span className="text-slate-500">{t("interface.equipment.age")} :</span> {quote.extraction.equipment_age_years != null ? t("interface.years.count",{count:quote.extraction.equipment_age_years}) : quote.extraction.equipment_age_band || t("interface.not.provided")}</div>
                 </div>
                 {(quote.extraction.faults || []).map((fault:any,index:number)=>{
                   const line=quote.lines[index]; const match=quote.matches[index];
                   return <div key={index} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1">
-                    <div><span className="font-semibold">Demande comprise :</span> {fault.description || "—"}</div>
-                    <div><span className="font-semibold">Équipement :</span> {fault.equipment_type || "—"}</div>
-                    <div><span className="font-semibold">Intervention tarifaire :</span> {line?.intervention || "—"} {line?.fault_code&&<span className="font-mono text-blue-700">({line.fault_code})</span>}</div>
-                    <div><span className="font-semibold">Complexité de cette panne :</span> {fault.complexity || quote.extraction.complexity || "—"}{fault.complexity_reason?` — ${fault.complexity_reason}`:""}</div>
-                    {match&&<div><span className="font-semibold">Correspondance catalogue :</span> {Math.round(Number(match.confidence||0)*100)} % · {match.retrieval==="vector"?"embeddings":"recherche textuelle"}</div>}
-                    {line?.components&&<div><span className="font-semibold">Détail :</span> pièces {line.components.parts} + main-d’œuvre {line.components.labour} + marge {line.components.fixed_margin} + équipement {line.components.equipment} = {line.total} {quote.currency}</div>}
+                    <div><span className="font-semibold">{t("interface.understood.request")} :</span> {fault.description || "—"}</div>
+                    <div><span className="font-semibold">{t("interface.equipment")} :</span> {fault.equipment_type || "—"}</div>
+                    <div><span className="font-semibold">{t("interface.priced.service")} :</span> {line?.intervention || "—"} {line?.fault_code&&<span className="font-mono text-blue-700">({line.fault_code})</span>}</div>
+                    <div><span className="font-semibold">{t("interface.issue.complexity")} :</span> {fault.complexity || quote.extraction.complexity || "—"}{fault.complexity_reason?` — ${fault.complexity_reason}`:""}</div>
+                    {match&&<div><span className="font-semibold">{t("interface.catalog.match")} :</span> {Math.round(Number(match.confidence||0)*100)} % · {match.retrieval==="vector"?"embeddings":t("interface.text.search")}</div>}
+                    {line?.components&&<div><span className="font-semibold">{t("interface.details")} :</span> {t("interface.parts")} {line.components.parts} + {t("interface.labour")} {line.components.labour} + {t("interface.margin")} {line.components.fixed_margin} + {t("interface.equipment").toLowerCase()} {line.components.equipment} = {line.total} {quote.currency}</div>}
                   </div>;
                 })}
-                <p className="text-slate-500">Si la demande comprise ou l’intervention tarifaire ne correspond pas à votre besoin, refusez le devis et reformulez avant de réserver.</p>
+                <p className="text-slate-500">{i18n.t("interface.if.the.understood.request.or.priced.service.does.not.match.your.need.dec")}</p>
               </div>
             </details>
             {!priceDecision&&(
               <div className="px-4 pb-4 border-t border-gray-100 pt-4">
-                <div className="text-sm font-medium text-foreground mb-3">Que souhaitez-vous faire ?</div>
+                <div className="text-sm font-medium text-foreground mb-3">{i18n.t("interface.what.would.you.like.to.do")}</div>
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={()=>handlePriceDecision("accept")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"><ThumbsUp className="w-5 h-5"/><span className="text-xs font-semibold">Accepter</span></button>
-                  <button onClick={()=>handlePriceDecision("decline")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 text-red-600"><ThumbsDown className="w-5 h-5"/><span className="text-xs font-semibold">Décliner</span></button>
+                  <button onClick={()=>handlePriceDecision("accept")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"><ThumbsUp className="w-5 h-5"/><span className="text-xs font-semibold">{i18n.t("interface.accept")}</span></button>
+                  <button onClick={()=>handlePriceDecision("decline")} className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 text-red-600"><ThumbsDown className="w-5 h-5"/><span className="text-xs font-semibold">{i18n.t("interface.decline")}</span></button>
                 </div>
               </div>
             )}
@@ -343,11 +344,11 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         )}
         {showSlots&&!booked&&(
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-100"><div className="text-sm font-semibold">Spécialistes {faultType} disponibles</div><div className="text-xs text-muted-foreground mt-0.5">{slotsLoading?"Consultation des agendas…":`${new Set(proposedSlots.map((slot)=>slot.techId)).size} technicien(s) avec un créneau compatible`}</div></div>
+            <div className="p-4 border-b border-gray-100"><div className="text-sm font-semibold">{t("interface.available.specialists",{specialty:faultType})}</div><div className="text-xs text-muted-foreground mt-0.5">{slotsLoading?t("interface.checking.schedules"):t("interface.compatible.technicians",{count:new Set(proposedSlots.map((slot)=>slot.techId)).size})}</div></div>
             <div className="p-3 space-y-2">
-              {slotsLoading&&<div className="p-4 text-sm text-muted-foreground text-center"><RefreshCw className="w-4 h-4 animate-spin inline mr-2"/>Recherche intelligente dans les agendas…</div>}
-              {!slotsLoading&&slotsError&&<div className="p-4 text-sm text-red-600 bg-red-50 rounded-xl text-center">{slotsError}<button onClick={()=>loadSuggestedSlots()} className="block mx-auto mt-2 text-xs font-semibold underline">Réessayer</button></div>}
-              {!slotsLoading&&!slotsError&&proposedSlots.length===0&&<div className="p-4 text-sm text-muted-foreground text-center">Aucun agenda libre parmi les spécialistes compatibles. Vous pouvez leur envoyer un message.</div>}
+              {slotsLoading&&<div className="p-4 text-sm text-muted-foreground text-center"><RefreshCw className="w-4 h-4 animate-spin inline mr-2"/>{i18n.t("interface.searching.schedules.intelligently")}</div>}
+              {!slotsLoading&&slotsError&&<div className="p-4 text-sm text-red-600 bg-red-50 rounded-xl text-center">{slotsError}<button onClick={()=>loadSuggestedSlots()} className="block mx-auto mt-2 text-xs font-semibold underline">{i18n.t("interface.try.again")}</button></div>}
+              {!slotsLoading&&!slotsError&&proposedSlots.length===0&&<div className="p-4 text-sm text-muted-foreground text-center">{i18n.t("interface.no.compatible.specialist.has.an.open.slot.you.can.send.them.a.message")}</div>}
               {proposedSlots.slice(0,visibleSlotCount).map((slot,i)=>{
                 const tech = technicians.find((t)=>t.id===slot.techId); if(!tech) return null;
                 const isSel = selectedSlot?.date===slot.date&&selectedSlot?.time===slot.time&&selectedSlot?.techId===slot.techId;
@@ -355,18 +356,18 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
                   <button key={i} onClick={()=>setSelectedSlot(slot)} className={`w-full text-left p-3 rounded-xl border transition-all ${isSel?"border-primary bg-blue-50":"border-gray-200 hover:border-gray-300 bg-gray-50/50"}`}>
                     <div className="flex items-center gap-3">
                       <Avatar initials={tech.avatar} color={tech.color} size="sm"/>
-                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {readableDistance(slot.distanceKm)} · {tech.response}</div><div className="mt-1 flex items-center gap-1 text-xs"><Star className={`w-3.5 h-3.5 ${tech.reviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span>{tech.reviews>0?`${tech.rating}/5 (${tech.reviews} avis client${tech.reviews>1?"s":""})`:"Pas encore évalué"}</span></div></div>
+                      <div className="flex-1"><div className="text-sm font-semibold">{slot.label} — {slot.time}</div><div className="text-xs text-muted-foreground">{tech.name} · {readableDistance(slot.distanceKm)} · {tech.response}</div><div className="mt-1 flex items-center gap-1 text-xs"><Star className={`w-3.5 h-3.5 ${tech.reviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span>{tech.reviews>0?`${tech.rating}/5 (${t("interface.customer.reviews",{count:tech.reviews})})`:t("interface.not.rated.yet")}</span></div></div>
                       {isSel&&<Check className="w-4 h-4 text-primary shrink-0"/>}
                     </div>
                   </button>
                 );
               })}
-              {!slotsLoading&&proposedSlots.length>visibleSlotCount&&<button type="button" onClick={()=>setVisibleSlotCount((count)=>count+4)} className="w-full h-10 rounded-xl border border-primary/30 text-sm font-semibold text-primary hover:bg-blue-50">Voir plus de propositions</button>}
+              {!slotsLoading&&proposedSlots.length>visibleSlotCount&&<button type="button" onClick={()=>setVisibleSlotCount((count)=>count+4)} className="w-full h-10 rounded-xl border border-primary/30 text-sm font-semibold text-primary hover:bg-blue-50">{i18n.t("interface.see.more.options")}</button>}
             </div>
             <div className="p-4 border-t border-gray-100 space-y-3">
               <div className="flex gap-2">
-                <button onClick={confirmSlot} disabled={!selectedSlot} className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40">Confirmer</button>
-                <button onClick={()=>{ setShowSlots(false); setMessages((m)=>[...m,{role:"user",text:"Non merci."},{role:"bot",text:"Pas de problème. Vous pouvez réserver depuis l'onglet Rendez-vous."}]); }} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">Non merci</button>
+                <button onClick={confirmSlot} disabled={!selectedSlot} className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40">{i18n.t("interface.confirm")}</button>
+                <button onClick={()=>{ setShowSlots(false); setMessages((m)=>[...m,{role:"user",text:"Non merci."},{role:"bot",text:"Pas de problème. Vous pouvez réserver depuis l'onglet Rendez-vous."}]); }} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.no.thanks")}</button>
               </div>
             </div>
           </div>
@@ -424,11 +425,11 @@ function ClientRdv({ technicians, appointments, setAppointments }:
   const canRate = (appt: Appointment) => appt.status==="completed";
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6 max-w-4xl mx-auto w-full">
-      <h2 className="text-xl font-bold text-foreground mb-1" style={{ fontFamily:"Onest,sans-serif" }}>Mes rendez-vous</h2>
-      <p className="text-sm text-muted-foreground mb-6">Historique et rendez-vous à venir</p>
+      <h2 className="text-xl font-bold text-foreground mb-1" style={{ fontFamily:"Onest,sans-serif" }}>{i18n.t("interface.my.appointments")}</h2>
+      <p className="text-sm text-muted-foreground mb-6">{i18n.t("interface.history.and.upcoming.appointments")}</p>
       {upcoming.length>0&&(
         <div className="mb-8">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">À venir</h3>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">{i18n.t("interface.upcoming")}</h3>
           <div className="space-y-3">{upcoming.map((appt)=>{
             const tech = technicians.find((t)=>t.id===appt.technicianId);
             const showFb = feedbackAppt===appt.id;
@@ -438,14 +439,14 @@ function ClientRdv({ technicians, appointments, setAppointments }:
                 <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
                   <div className="flex items-start justify-between"><div><div className="font-semibold text-foreground">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="confirmed"?"green":"amber"}>{appt.status==="confirmed"?"Confirmé":"En attente"}</Badge></div>
                   <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div><div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/>{appt.time}</div><div className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/>{appt.address}</div></div>
-                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">Prix estimé : </span><span className="font-bold">{appt.estimatedPrice} {appt.currency}</span></div>
-                  <button onClick={()=>{setCancelError("");setCancelAppt(appt);}} className="mt-3 h-9 px-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100">Annuler ce rendez-vous</button>
-                  {ratable&&!appt.rating&&!showFb&&<button onClick={()=>setFeedbackAppt(appt.id)} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1"><Star className="w-3.5 h-3.5"/>Évaluer</button>}
+                  <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">{i18n.t("interface.estimated.price")} : </span><span className="font-bold">{appt.estimatedPrice} {appt.currency}</span></div>
+                  <button onClick={()=>{setCancelError("");setCancelAppt(appt);}} className="mt-3 h-9 px-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100">{i18n.t("interface.cancel.this.appointment")}</button>
+                  {ratable&&!appt.rating&&!showFb&&<button onClick={()=>setFeedbackAppt(appt.id)} className="mt-2 text-xs text-primary hover:underline flex items-center gap-1"><Star className="w-3.5 h-3.5"/>{i18n.t("interface.rate")}</button>}
                   {showFb&&(
                     <div className="mt-3 space-y-2 pt-3 border-t border-gray-100">
                       <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setFeedback((f)=>({...f,rating:s}))}><Star className={`w-5 h-5 ${s<=feedback.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
-                      <textarea value={feedback.comment} onChange={(e)=>setFeedback((f)=>({...f,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-16 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:border-blue-400"/>
-                      <div className="flex gap-2"><button onClick={()=>submitFeedback(appt.id)} disabled={!feedback.rating} className="flex-1 h-8 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-40">Publier</button><button onClick={()=>setFeedbackAppt(null)} className="h-8 px-3 rounded-lg border border-gray-200 text-xs text-muted-foreground">Annuler</button></div>
+                      <textarea value={feedback.comment} onChange={(e)=>setFeedback((f)=>({...f,comment:e.target.value}))} placeholder={i18n.t("interface.your.experience")} className="w-full h-16 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:border-blue-400"/>
+                      <div className="flex gap-2"><button onClick={()=>submitFeedback(appt.id)} disabled={!feedback.rating} className="flex-1 h-8 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-40">{i18n.t("interface.publish")}</button><button onClick={()=>setFeedbackAppt(null)} className="h-8 px-3 rounded-lg border border-gray-200 text-xs text-muted-foreground">{i18n.t("interface.cancel")}</button></div>
                     </div>
                   )}
                 </div></div>
@@ -454,7 +455,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
           })}</div>
         </div>
       )}
-      <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">Historique</h3>
+      <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">{i18n.t("interface.history")}</h3>
       <div className="space-y-3">{history.map((appt)=>{
         const tech = technicians.find((t)=>t.id===appt.technicianId);
         const isExp = selectedAppt?.id===appt.id;
@@ -470,20 +471,20 @@ function ClientRdv({ technicians, appointments, setAppointments }:
             {isExp&&(
               <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
                 <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm mb-3"><div><div className="text-xs text-muted-foreground mb-1">Prix estimé</div><div className="font-medium">{appt.estimatedPrice} {appt.currency}</div></div><div><div className="text-xs text-muted-foreground mb-1">Prix réel</div><div className="text-lg font-bold">{appt.actualPrice??"—"} {appt.currency}</div></div></div>
-                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>Confirmez-vous avoir payé ce montant ?</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">Oui, j'ai payé {appt.actualPrice} {appt.currency}</button></div>}
-                  {appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200 flex items-center gap-2 text-xs text-emerald-600"><CheckCircle2 className="w-3.5 h-3.5"/>Prix confirmé</div>}
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-3"><div><div className="text-xs text-muted-foreground mb-1">{i18n.t("interface.estimated.price")}</div><div className="font-medium">{appt.estimatedPrice} {appt.currency}</div></div><div><div className="text-xs text-muted-foreground mb-1">{i18n.t("interface.actual.price")}</div><div className="text-lg font-bold">{appt.actualPrice??"—"} {appt.currency}</div></div></div>
+                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>{i18n.t("interface.do.you.confirm.that.you.paid.this.amount")}</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">Oui, j'ai payé {appt.actualPrice} {appt.currency}</button></div>}
+                  {appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200 flex items-center gap-2 text-xs text-emerald-600"><CheckCircle2 className="w-3.5 h-3.5"/>{i18n.t("interface.price.confirmed")}</div>}
                 </div>
-                {appt.caseDescription&&<div><div className="text-xs font-medium text-muted-foreground mb-2">Description</div><div className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">{appt.caseDescription}</div></div>}
+                {appt.caseDescription&&<div><div className="text-xs font-medium text-muted-foreground mb-2">{i18n.t("interface.description")}</div><div className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">{appt.caseDescription}</div></div>}
                 {canRate(appt)&&(appt.feedback&&!showFb?(
-                  <div><div className="text-xs font-medium text-muted-foreground mb-2">Votre avis</div><div className="flex gap-1 mb-1">{[1,2,3,4,5].map((s)=><Star key={s} className={`w-4 h-4 ${s<=appt.rating!?"text-amber-400 fill-amber-400":"text-gray-300"}`}/>)}</div><div className="text-sm">{appt.feedback}</div><button onClick={()=>{setFeedback({rating:appt.rating||0,comment:appt.feedback||""});setFeedbackAppt(appt.id);}} className="mt-2 text-xs text-primary hover:underline">Modifier votre évaluation</button></div>
+                  <div><div className="text-xs font-medium text-muted-foreground mb-2">{i18n.t("interface.your.review")}</div><div className="flex gap-1 mb-1">{[1,2,3,4,5].map((s)=><Star key={s} className={`w-4 h-4 ${s<=appt.rating!?"text-amber-400 fill-amber-400":"text-gray-300"}`}/>)}</div><div className="text-sm">{appt.feedback}</div><button onClick={()=>{setFeedback({rating:appt.rating||0,comment:appt.feedback||""});setFeedbackAppt(appt.id);}} className="mt-2 text-xs text-primary hover:underline">{i18n.t("interface.edit.your.rating")}</button></div>
                 ):!showFb?(
-                  <button onClick={()=>setFeedbackAppt(appt.id)} className="w-full h-9 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 flex items-center justify-center gap-2"><MessageCircle className="w-4 h-4"/>Laisser un avis</button>
+                  <button onClick={()=>setFeedbackAppt(appt.id)} className="w-full h-9 rounded-lg border border-gray-200 text-sm hover:bg-gray-50 flex items-center justify-center gap-2"><MessageCircle className="w-4 h-4"/>{i18n.t("interface.leave.a.review")}</button>
                 ):(
                   <div className="space-y-3">
                     <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setFeedback((f)=>({...f,rating:s}))}><Star className={`w-6 h-6 ${s<=feedback.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
-                    <textarea value={feedback.comment} onChange={(e)=>setFeedback((f)=>({...f,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-20 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:border-blue-400"/>
-                    <div className="flex gap-2"><button onClick={()=>submitFeedback(appt.id)} disabled={!feedback.rating} className="flex-1 h-9 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40">Publier</button><button onClick={()=>setFeedbackAppt(null)} className="h-9 px-4 rounded-lg border border-gray-200 text-sm text-muted-foreground">Annuler</button></div>
+                    <textarea value={feedback.comment} onChange={(e)=>setFeedback((f)=>({...f,comment:e.target.value}))} placeholder={i18n.t("interface.your.experience")} className="w-full h-20 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 resize-none focus:outline-none focus:border-blue-400"/>
+                    <div className="flex gap-2"><button onClick={()=>submitFeedback(appt.id)} disabled={!feedback.rating} className="flex-1 h-9 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40">{i18n.t("interface.publish")}</button><button onClick={()=>setFeedbackAppt(null)} className="h-9 px-4 rounded-lg border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.cancel")}</button></div>
                   </div>
                 ))}
               </div>
@@ -494,11 +495,11 @@ function ClientRdv({ technicians, appointments, setAppointments }:
       {cancelAppt&&<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onMouseDown={(event)=>{if(event.target===event.currentTarget&&!cancelling)setCancelAppt(null);}}>
         <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
           <div className="w-11 h-11 rounded-full bg-red-50 text-red-600 flex items-center justify-center mb-4"><AlertCircle className="w-5 h-5"/></div>
-          <h3 id="cancel-title" className="text-lg font-bold">Confirmer l’annulation</h3>
-          <p className="mt-2 text-sm text-muted-foreground">Voulez-vous vraiment annuler le rendez-vous avec <strong className="text-foreground">{cancelAppt.technicianName}</strong>, prévu le {cancelAppt.date} à {cancelAppt.time} ?</p>
-          <p className="mt-2 text-xs text-red-600">Le technicien sera immédiatement informé.</p>
+          <h3 id="cancel-title" className="text-lg font-bold">{i18n.t("interface.confirm.cancellation")}</h3>
+          <p className="mt-2 text-sm text-muted-foreground">{i18n.t("interface.cancel.appointment.question")} <strong className="text-foreground">{cancelAppt.technicianName}</strong>, {i18n.t("interface.scheduled.on")} {cancelAppt.date} {i18n.t("interface.at")} {cancelAppt.time} ?</p>
+          <p className="mt-2 text-xs text-red-600">{i18n.t("interface.the.technician.will.be.notified.immediately")}</p>
           {cancelError&&<div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{cancelError}</div>}
-          <div className="mt-6 flex gap-2"><button onClick={()=>setCancelAppt(null)} disabled={cancelling} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50">Garder le rendez-vous</button><button onClick={cancelAppointment} disabled={cancelling} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{cancelling?"Annulation…":"Oui, annuler"}</button></div>
+          <div className="mt-6 flex gap-2"><button onClick={()=>setCancelAppt(null)} disabled={cancelling} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50">{i18n.t("interface.keep.appointment")}</button><button onClick={cancelAppointment} disabled={cancelling} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{cancelling?"Annulation…":"Oui, annuler"}</button></div>
         </div>
       </div>}
     </div>
@@ -511,9 +512,12 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
   { technicians: Technician[]; location: UserLocation|null; contactedTechs: number[]; onContact: (id:number)=>void }) {
   const { language, text:t } = useInterfaceLanguage();
   const specialtyLabel=(value:string)=>language==="fr"?value:value
-    .replace(/Climatisation/g,"Air conditioning").replace(/Réparation/g,"Repair")
-    .replace(/Chauffage/g,"Heating").replace(/Réfrigération/g,"Refrigeration")
-    .replace(/Pompe à chaleur/g,"Heat pump").replace(/Entretien/g,"Maintenance");
+    .replace(/Climatisation/g,t("specialties.airConditioning"))
+    .replace(/Réparation/g,t("specialties.repair"))
+    .replace(/Chauffage/g,t("specialties.heating"))
+    .replace(/Réfrigération/g,t("specialties.refrigeration"))
+    .replace(/Pompe à chaleur/g,t("specialties.heatPump"))
+    .replace(/Entretien/g,t("specialties.maintenance"));
   const [selected, setSelected] = useState<number|null>(null);
   const [search, setSearch] = useState("");
   const [filterSpec, setFilterSpec] = useState<string|null>(null);
@@ -560,9 +564,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
     <div className="h-full flex flex-col md:flex-row overflow-hidden">
       <div className="relative z-[1100] w-full max-h-[55vh] md:max-h-none md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col shadow-sm md:shadow-none">
         <div className="p-3 border-b border-border space-y-2">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder={t("Nom ou spécialisation…","Name or specialization…")} className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder={t("interface.name.or.specialization")} className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
           <div className="flex gap-1.5 flex-wrap">
-            <button onClick={()=>setShowAvailOnly(!showAvailOnly)} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${showAvailOnly?"bg-emerald-500 text-white border-emerald-500":"border-gray-200 text-muted-foreground"}`}><span className={`w-1.5 h-1.5 rounded-full ${showAvailOnly?"bg-white":"bg-emerald-400"}`}/>{t("Disponibles","Available")}</button>
+            <button onClick={()=>setShowAvailOnly(!showAvailOnly)} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${showAvailOnly?"bg-emerald-500 text-white border-emerald-500":"border-gray-200 text-muted-foreground"}`}><span className={`w-1.5 h-1.5 rounded-full ${showAvailOnly?"bg-white":"bg-emerald-400"}`}/>{t("interface.available.2")}</button>
             {["Climatisation","Chauffage","Installation","Réparation"].map((spec)=><button key={spec} onClick={()=>setFilterSpec(filterSpec===spec?null:spec)} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${filterSpec===spec?"bg-primary text-white border-primary":"border-gray-200 text-muted-foreground"}`}>{specialtyLabel(spec)}</button>)}
           </div>
           {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{filtered.length} technicien(s) · depuis <strong>{location.city}</strong></div>}
@@ -585,25 +589,25 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm == null ? (language==="fr"?"Distance indisponible":"Distance unavailable") : `${t.distanceKm.toFixed(1)} km`}</span></div>
                       <div className="flex flex-wrap gap-1 mt-1">{t.specializations.slice(0,2).map((s)=><span key={s} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{specialtyLabel(s)}</span>)}</div>
-                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className={`w-3 h-3 ${aggregateReviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span className="text-xs font-medium">{aggregateReviews>0?aggregateRating:"—"}</span><span className="text-xs text-muted-foreground">({aggregateReviews} {language==="fr"?`avis client${aggregateReviews>1?"s":""}`:`customer review${aggregateReviews===1?"":"s"}`})</span></div><Badge color={isBlocked?"red":t.available?"green":"gray"}>{isBlocked?(language==="fr"?"Bloqué":"Blocked"):t.available?(language==="fr"?"Disponible":"Available"):(language==="fr"?"Indisponible":"Unavailable")}</Badge>{isContacted&&<Badge color="blue">{language==="fr"?"Contacté":"Contacted"}</Badge>}</div>
+                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className={`w-3 h-3 ${aggregateReviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span className="text-xs font-medium">{aggregateReviews>0?aggregateRating:"—"}</span><span className="text-xs text-muted-foreground">({t("interface.customer.reviews",{count:aggregateReviews})})</span></div><Badge color={isBlocked?"red":t.available?"green":"gray"}>{isBlocked?t("interface.blocked"):t.available?t("interface.available"):t("interface.unavailable")}</Badge>{isContacted&&<Badge color="blue">{t("interface.contacted")}</Badge>}</div>
                     </div>
                   </div>
                 </button>
                 {selected===t.id&&(
                   <div className="px-4 pb-4 space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="w-3.5 h-3.5"/>{language==="fr"?"Répond en":"Responds in"} {t.response}</div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Clock className="w-3.5 h-3.5"/>{i18n.t("interface.responds.in")} {t.response}</div>
                     <div className="text-xs font-medium text-primary">{t.price}</div>
                     <div className="flex flex-wrap gap-1">{t.tags.map((tag)=><span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">{tag}</span>)}</div>
-                    {aggregateReviews>0&&<div className="rounded-lg border border-gray-100 bg-white p-2 space-y-2"><div className="text-[11px] font-semibold text-muted-foreground">{language==="fr"?"Avis clients récents":"Recent customer reviews"}</div>{(publicRatings[t.id]||[]).slice(0,3).map((review,index)=><div key={index} className="border-t border-gray-50 pt-2"><div className="flex items-center justify-between"><span className="text-xs font-medium">{review.client_name}</span><span className="text-xs text-amber-500">{"★".repeat(review.rating)}</span></div>{review.comment&&<p className="text-xs text-muted-foreground mt-0.5">{review.comment}</p>}</div>)}</div>}
-                    <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">{language==="fr"?"Ouvrir la discussion":"Open conversation"}</button>
+                    {aggregateReviews>0&&<div className="rounded-lg border border-gray-100 bg-white p-2 space-y-2"><div className="text-[11px] font-semibold text-muted-foreground">{i18n.t("interface.recent.customer.reviews")}</div>{(publicRatings[t.id]||[]).slice(0,3).map((review,index)=><div key={index} className="border-t border-gray-50 pt-2"><div className="flex items-center justify-between"><span className="text-xs font-medium">{review.client_name}</span><span className="text-xs text-amber-500">{"★".repeat(review.rating)}</span></div>{review.comment&&<p className="text-xs text-muted-foreground mt-0.5">{review.comment}</p>}</div>)}</div>}
+                    <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">{i18n.t("interface.open.conversation")}</button>
                     <button onClick={()=>toggleBlock(t)} className={`w-full h-8 rounded-lg border text-xs flex items-center justify-center gap-1.5 ${isBlocked?"border-emerald-200 text-emerald-700 hover:bg-emerald-50":"border-red-200 text-red-600 hover:bg-red-50"}`}><BanIcon className="w-3.5 h-3.5"/>{isBlocked?"Débloquer ce technicien":"Bloquer ce technicien"}</button>
                     {ratingAllowed&&!isRating&&<button onClick={()=>{setRatingTech(t.id);setRatingDraft({rating:personalRating||0,comment:existing?.comment??t.myRatingComment??""});}} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{personalRating?`Votre note : ${personalRating}/5 — modifier`:"Évaluer ce technicien"}</button>}
-                    {!ratingAllowed&&<div className="text-[11px] text-muted-foreground text-center">Contactez ce technicien pour pouvoir l’évaluer.</div>}
+                    {!ratingAllowed&&<div className="text-[11px] text-muted-foreground text-center">{i18n.t("interface.contact.this.technician.before.leaving.a.rating")}</div>}
                     {isRating&&ratingAllowed&&(
                       <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex gap-1">{[1,2,3,4,5].map((s)=><button key={s} onClick={()=>setRatingDraft((r)=>({...r,rating:s}))}><Star className={`w-5 h-5 ${s<=ratingDraft.rating?"text-amber-400 fill-amber-400":"text-gray-300"}`}/></button>)}</div>
-                        <textarea value={ratingDraft.comment} onChange={(e)=>setRatingDraft((r)=>({...r,comment:e.target.value}))} placeholder="Votre expérience…" className="w-full h-14 px-2 py-1.5 rounded-lg border border-gray-200 text-xs bg-white resize-none"/>
-                        <div className="flex gap-1.5"><button onClick={()=>submitRating(t.id)} disabled={!ratingDraft.rating} className="flex-1 h-7 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-40">Publier</button><button onClick={()=>setRatingTech(null)} className="h-7 px-2 rounded-lg border border-gray-200 text-xs text-muted-foreground">✕</button></div>
+                        <textarea value={ratingDraft.comment} onChange={(e)=>setRatingDraft((r)=>({...r,comment:e.target.value}))} placeholder={i18n.t("interface.your.experience")} className="w-full h-14 px-2 py-1.5 rounded-lg border border-gray-200 text-xs bg-white resize-none"/>
+                        <div className="flex gap-1.5"><button onClick={()=>submitRating(t.id)} disabled={!ratingDraft.rating} className="flex-1 h-7 rounded-lg bg-primary text-white text-xs font-semibold disabled:opacity-40">{i18n.t("interface.publish")}</button><button onClick={()=>setRatingTech(null)} className="h-7 px-2 rounded-lg border border-gray-200 text-xs text-muted-foreground">✕</button></div>
                       </div>
                     )}
                   </div>
@@ -617,9 +621,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
       <div className="z-0 flex-1 min-h-[420px] relative overflow-hidden isolate">
         <TechnicianMap technicians={filtered.map((technician)=>({...technician,canRate:technician.canRate||contactedTechs.includes(technician.id)}))} location={location} selectedId={selected} onSelect={selectTechnician} onContact={onContact} onRate={(id)=>{const technician=technicians.find((item)=>item.id===id);setSelected(id);setRatingTech(id);setRatingDraft({rating:technician?.myRating||0,comment:technician?.myRatingComment||""});}}/>
         <div className="absolute z-[1000] bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5 pointer-events-none">
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">{language==="fr"?"Disponible":"Available"}</span></div>
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">{language==="fr"?"Contacté":"Contacted"}</span></div>
-          <div className="font-medium text-foreground pt-1 border-t border-gray-100">{technicians.filter((t)=>t.available).length} {language==="fr"?"disponibles":"available"}</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">{t("interface.available")}</span></div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">{t("interface.contacted")}</span></div>
+          <div className="font-medium text-foreground pt-1 border-t border-gray-100">{t("interface.available.technicians",{count:technicians.filter((item)=>item.available).length})}</div>
         </div>
       </div>
     </div>

@@ -7,16 +7,19 @@
     "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "build": "vite build",
     "lint": "eslint .",
+    "test:i18n": "node scripts/validate-i18n.mjs",
     "test:realtime": "node scripts/realtime-smoke.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "axios": "^1.18.1",
+    "i18next": "^26.3.6",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-dropzone": "^15.0.0",
+    "react-i18next": "^17.0.11",
     "react-leaflet": "^5.0.0",
     "react-router-dom": "^7.18.1",
     "socket.io-client": "^4.8.3"

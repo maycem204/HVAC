@@ -70,9 +70,12 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
   { technicians: MapTechnician[]; location: Coordinates | null; selectedId: number | null; onSelect: (id: number) => void; onContact: (id: number) => void; onRate: (id: number) => void }) {
   const { language, text:t } = useInterfaceLanguage();
   const specialtyLabel=(value:string)=>language==="fr"?value:value
-    .replace(/Climatisation/g,"Air conditioning").replace(/Réparation/g,"Repair")
-    .replace(/Chauffage/g,"Heating").replace(/Réfrigération/g,"Refrigeration")
-    .replace(/Pompe à chaleur/g,"Heat pump").replace(/Entretien/g,"Maintenance");
+    .replace(/Climatisation/g,t("specialties.airConditioning"))
+    .replace(/Réparation/g,t("specialties.repair"))
+    .replace(/Chauffage/g,t("specialties.heating"))
+    .replace(/Réfrigération/g,t("specialties.refrigeration"))
+    .replace(/Pompe à chaleur/g,t("specialties.heatPump"))
+    .replace(/Entretien/g,t("specialties.maintenance"));
   const visibleTechnicians = technicians.filter(validPoint);
   const points = useMemo<Array<[number, number]>>(() => {
     const result = visibleTechnicians.map((technician) => [technician.lat, technician.lng] as [number, number]);
@@ -90,7 +93,7 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
       <MapViewport points={points} selected={selected} />
       {location && validPoint(location) && (
         <Marker position={[location.lat, location.lng]} icon={userIcon}>
-          <Popup><strong>{t("Votre position","Your location")}</strong><br />{location.city}</Popup>
+          <Popup><strong>{t("interface.your.location")}</strong><br />{location.city}</Popup>
         </Marker>
       )}
       {visibleTechnicians.map((technician) => (
@@ -104,14 +107,14 @@ export default function TechnicianMap({ technicians, location, selectedId, onSel
             <div className="min-w-44">
               {technician.avatar?.startsWith("data:image/")&&<img src={technician.avatar} alt={`Photo de ${technician.name}`} className="mb-2 h-14 w-14 rounded-full object-cover"/>}
               <strong>{technician.name}</strong>
-              <div>{specialtyLabel(technician.specialty || t("Technicien HVAC","HVAC technician"))}</div>
-              <div style={{color:technician.liveLocationActive?"#059669":"#64748b",fontSize:"12px"}}>{technician.liveLocationActive?t("Position en direct","Live location"):t("Position du profil","Profile location")}</div>
-              <div style={{color:technician.reviews>0?"#d97706":"#64748b"}}>{technician.reviews>0?`★ ${technician.rating}/5 · ${technician.reviews} ${t("avis","reviews")}`:t("Aucun avis","No reviews")}</div>
-              <div>{technician.distanceKm == null ? t("Distance indisponible","Distance unavailable") : `${technician.distanceKm.toFixed(1)} km`}</div>
+              <div>{specialtyLabel(technician.specialty || t("interface.hvac.technician"))}</div>
+              <div style={{color:technician.liveLocationActive?"#059669":"#64748b",fontSize:"12px"}}>{technician.liveLocationActive?t("interface.live.location"):t("interface.profile.location")}</div>
+              <div style={{color:technician.reviews>0?"#d97706":"#64748b"}}>{technician.reviews>0?`★ ${technician.rating}/5 · ${t("interface.reviews",{count:technician.reviews})}`:t("interface.no.reviews")}</div>
+              <div>{technician.distanceKm == null ? t("interface.distance.unavailable") : `${technician.distanceKm.toFixed(1)} km`}</div>
               <button type="button" onClick={() => onContact(technician.id)} className="mt-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">
-                {t("Contacter","Contact")}
+                {t("interface.contact")}
               </button>
-              {technician.canRate&&<button type="button" onClick={() => onRate(technician.id)} className="ml-1 mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">{t("Évaluer","Rate")}</button>}
+              {technician.canRate&&<button type="button" onClick={() => onRate(technician.id)} className="ml-1 mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">{t("interface.rate")}</button>}
             </div>
           </Popup>
         </Marker>

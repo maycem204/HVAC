@@ -20,6 +20,7 @@ import type {
 } from "./domain";
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
 import { useInterfaceLanguage } from "./InterfaceLanguage";
+import i18n from "../i18n";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -126,10 +127,11 @@ export function NotificationPanel({ notifications, onSelect, onReadAll, onClose 
   const { language, text:t } = useInterfaceLanguage();
   const unreadNotifications = notifications.filter((notification)=>!notification.read);
   const notificationText=(value:string)=>language==="fr"?value:value
-    .replace(/Rendez-vous annulé/gi,"Appointment cancelled")
-    .replace(/Rendez-vous confirmé/gi,"Appointment confirmed")
-    .replace(/Le client a annulé le rendez-vous du/gi,"The customer cancelled the appointment on")
-    .replace(/Nouveau lead/gi,"New lead").replace(/Nouvel avis client/gi,"New customer review");
+    .replace(/Rendez-vous annulé/gi,t("notifications.appointmentCancelled"))
+    .replace(/Rendez-vous confirmé/gi,t("notifications.appointmentConfirmed"))
+    .replace(/Le client a annulé le rendez-vous du/gi,t("notifications.customerCancelledOn"))
+    .replace(/Nouveau lead/gi,t("notifications.newLead"))
+    .replace(/Nouvel avis client/gi,t("notifications.newCustomerReview"));
   const icons: Record<string, { el: React.ReactNode; cls: string }> = {
     lead: { el:<Tag className="w-3.5 h-3.5"/>, cls:"bg-blue-100 text-blue-600" },
     rdv: { el:<Calendar className="w-3.5 h-3.5"/>, cls:"bg-emerald-100 text-emerald-600" },
@@ -143,19 +145,19 @@ export function NotificationPanel({ notifications, onSelect, onReadAll, onClose 
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div className="absolute top-14 right-4 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden" onClick={(e)=>e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div><div className="font-semibold text-sm text-foreground">Notifications</div><div className="text-xs text-muted-foreground">{unreadNotifications.length} {t(unreadNotifications.length>1?"non lues":"non lue","unread")}</div></div>
-          <div className="flex items-center gap-2"><button onClick={onReadAll} className="text-xs text-primary hover:underline">{t("Tout marquer lu","Mark all as read")}</button><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4"/></button></div>
+          <div><div className="font-semibold text-sm text-foreground">{i18n.t("interface.notifications")}</div><div className="text-xs text-muted-foreground">{t("interface.unread.notifications",{count:unreadNotifications.length})}</div></div>
+          <div className="flex items-center gap-2"><button onClick={onReadAll} className="text-xs text-primary hover:underline">{t("interface.mark.all.as.read")}</button><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4"/></button></div>
         </div>
         <div className="max-h-96 overflow-y-auto">
-          {unreadNotifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">{t("Aucune nouvelle notification","No new notifications")}</div>
+          {unreadNotifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">{t("interface.no.new.notifications")}</div>
           : unreadNotifications.map((n) => {
             const ni = icons[n.type];
             return (
               <button key={n.id} onClick={()=>onSelect(n)} className={`w-full text-left px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 flex items-start gap-3 ${!n.read?"bg-blue-50/30":""}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ni?.cls}`}>{ni?.el}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2"><div data-language-neutral="true" className={`text-sm text-foreground ${!n.read?"font-semibold":""}`}>{notificationText(n.title)}</div>{!n.read&&<span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1"/>}</div>
-                  <div data-language-neutral="true" className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{notificationText(n.message)}</div>
+                  <div className="flex items-start justify-between gap-2"><div className={`text-sm text-foreground ${!n.read?"font-semibold":""}`}>{notificationText(n.title)}</div>{!n.read&&<span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1"/>}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{notificationText(n.message)}</div>
                   <div className="text-xs text-muted-foreground/60 mt-1">{n.time}</div>
                 </div>
               </button>
@@ -235,27 +237,27 @@ export function ProfileModal({ user, role, onClose, onSave }:
       <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl overflow-hidden" onClick={(e)=>e.stopPropagation()}>
         <div className={`h-1.5 ${isClient?"bg-blue-500":"bg-emerald-500"}`}/>
         <div className="p-6 max-h-[85vh] overflow-y-auto">
-          <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>Mon profil</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
+          <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>{i18n.t("interface.my.profile")}</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
           <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-xl">
             <Avatar initials={form.avatar || form.name.split(" ").map((n)=>n[0]).join("").slice(0,2).toUpperCase() || "?"} color={isClient?"bg-blue-500":"bg-emerald-500"} size="lg"/>
             <div><div className="font-semibold text-foreground">{form.name||"Votre nom"}</div><Badge color={isClient?"blue":"green"}>{isClient?"Client":"Technicien"}</Badge></div>
           </div>
-          {!isClient&&<div className="mb-5"><label className="block text-xs font-medium mb-1.5">Photo de profil</label><label className="h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm inline-flex items-center gap-2 cursor-pointer hover:bg-gray-100"><Upload className="w-4 h-4"/>Choisir une photo<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>selectPhoto(event.target.files?.[0])}/></label>{photoError&&<div className="text-xs text-red-600 mt-1">{photoError}</div>}</div>}
+          {!isClient&&<div className="mb-5"><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.profile.photo")}</label><label className="h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm inline-flex items-center gap-2 cursor-pointer hover:bg-gray-100"><Upload className="w-4 h-4"/>{i18n.t("interface.choose.a.photo")}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>selectPhoto(event.target.files?.[0])}/></label>{photoError&&<div className="text-xs text-red-600 mt-1">{photoError}</div>}</div>}
           <div className="space-y-4">
-            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Informations personnelles</div>
+            <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{i18n.t("interface.personal.information")}</div>
             <div className="grid grid-cols-2 gap-3">{field("name","Nom complet","text","Votre nom")}{field("email","Email","email","votre@email.com")}{field("phone","Téléphone","tel","+213 6 xx xx xx")}{field("city","Ville ou localisation","text","Alger",true)}</div>
             {field("address","Adresse","text","Numéro, rue, quartier…")}
             {!isClient && (
               <div className="pt-2 space-y-4">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Spécialisations</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{i18n.t("interface.specializations")}</div>
                 <div className="flex flex-wrap gap-2">{ALL_SPECIALIZATIONS.map((s)=><button key={s} onClick={()=>toggleSpec(s)} className={`px-3 py-1.5 rounded-full text-xs border transition-all ${techSpec.includes(s)?"bg-emerald-500 text-white border-emerald-500":"bg-gray-50 text-muted-foreground border-gray-200 hover:border-emerald-300"}`}>{techSpec.includes(s)&&<Check className="w-3 h-3 inline mr-1"/>}{s}</button>)}</div>
                 {techSpec.some((specialization)=>!ALL_SPECIALIZATIONS.includes(specialization))&&<div className="flex flex-wrap gap-2">{techSpec.filter((specialization)=>!ALL_SPECIALIZATIONS.includes(specialization)).map((specialization)=><button type="button" key={specialization} onClick={()=>toggleSpec(specialization)} className="px-3 py-1.5 rounded-full text-xs border border-emerald-500 bg-emerald-500 text-white"><Check className="w-3 h-3 inline mr-1"/>{specialization}<X className="w-3 h-3 inline ml-1"/></button>)}</div>}
-                <div><label className="block text-xs font-medium mb-1.5">Ajouter une spécialité personnalisée</label><div className="flex gap-2"><input value={customSpec} maxLength={80} onChange={(event)=>setCustomSpec(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"){event.preventDefault();addCustomSpec();}}} placeholder="Ex. Réparation de climatiseurs industriels" className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/><button type="button" onClick={addCustomSpec} disabled={!customSpec.trim()} className="h-10 px-3 rounded-lg bg-emerald-500 text-white text-xs font-semibold disabled:opacity-40"><Plus className="w-4 h-4"/></button></div><p className="mt-1 text-[11px] text-muted-foreground">Cette spécialité sera utilisée pour proposer les demandes correspondantes.</p></div>
-                <div><div className="flex items-center justify-between mb-2"><div className="text-xs font-medium">Rayon d'intervention</div><span className="text-sm font-bold text-emerald-600">{radius} km</span></div><input type="range" min={2} max={50} value={radius} onChange={(e)=>setRadius(Number(e.target.value))} className="w-full accent-emerald-500"/></div>
+                <div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.add.a.custom.specialization")}</label><div className="flex gap-2"><input value={customSpec} maxLength={80} onChange={(event)=>setCustomSpec(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"){event.preventDefault();addCustomSpec();}}} placeholder="Ex. Réparation de climatiseurs industriels" className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/><button type="button" onClick={addCustomSpec} disabled={!customSpec.trim()} className="h-10 px-3 rounded-lg bg-emerald-500 text-white text-xs font-semibold disabled:opacity-40"><Plus className="w-4 h-4"/></button></div><p className="mt-1 text-[11px] text-muted-foreground">{i18n.t("interface.this.specialization.will.be.used.to.match.relevant.requests")}</p></div>
+                <div><div className="flex items-center justify-between mb-2"><div className="text-xs font-medium">{i18n.t("interface.service.radius")}</div><span className="text-sm font-bold text-emerald-600">{radius} km</span></div><input type="range" min={2} max={50} value={radius} onChange={(e)=>setRadius(Number(e.target.value))} className="w-full accent-emerald-500"/></div>
               </div>
             )}
           </div>
-          <div className="mt-6">{saved?<div className="flex items-center justify-center gap-2 h-11 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>Profil enregistré !</div>:<button onClick={save} disabled={saving} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-500 hover:bg-emerald-600"}`}><Save className="w-4 h-4"/>{saving?"Enregistrement…":"Enregistrer"}</button>}</div>
+          <div className="mt-6">{saved?<div className="flex items-center justify-center gap-2 h-11 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>{i18n.t("interface.profile.saved")}</div>:<button onClick={save} disabled={saving} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-500 hover:bg-emerald-600"}`}><Save className="w-4 h-4"/>{saving?"Enregistrement…":"Enregistrer"}</button>}</div>
         </div>
       </div>
     </div>

@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import api from "../lib/api";
 import { disconnectRealtime, realtimeSocket } from "../lib/socket";
 import type { AppUser, Role, Technician, UserLocation } from "./domain";
 import { mapTechnician } from "./mappers";
 import { AuthForm, LocationModal } from "./PublicViews";
 import { MarketingLanding } from "./MarketingLanding";
-import { InterfaceLanguageProvider, InterfaceLanguageSelector } from "./InterfaceLanguage";
+import { InterfaceLanguageSelector } from "./InterfaceLanguage";
 import { ClientDashboard } from "./ClientDashboard";
 import { TechDashboard } from "./TechnicianDashboard";
 
 export default function App() {
+  const { t } = useTranslation();
   const [user, setUser] = useState<AppUser|null>(null);
   const [location, setLocation] = useState<UserLocation|null>(null);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
@@ -128,12 +130,12 @@ export default function App() {
         }catch{}
       }
       if(!place)throw new Error("Profile location unavailable");
-      const fallback:UserLocation={lat:Number(place.lat),lng:Number(place.lng),city:currentUser.city||place.city||"Position du profil",district:currentUser.address||place.district||currentUser.city||"",source:"profile"};
+      const fallback:UserLocation={lat:Number(place.lat),lng:Number(place.lng),city:currentUser.city||place.city||t("interface.profile.location"),district:currentUser.address||place.district||currentUser.city||"",source:"profile"};
       setLocation(fallback);
       const {data}=await api.patch(`/users/${currentUser.id}`,{lat:fallback.lat,lng:fallback.lng,live_location_active:false});
       setUser(data);
     }catch{
-      setLocationError("Le suivi est désactivé, mais la position de votre ville n’a pas pu être actualisée.");
+      setLocationError(t("interface.tracking.is.off.but.your.city.location.could.not.be.updated"));
     }
   }
   function stopLiveLocation(restoreProfile=true){
@@ -145,7 +147,7 @@ export default function App() {
   }
   function startLiveLocation(){
     if(!user)return;
-    if(!("geolocation" in navigator)){setLocationError("La géolocalisation n’est pas disponible sur ce navigateur.");return;}
+    if(!("geolocation" in navigator)){setLocationError(t("interface.geolocation.is.unavailable.in.this.browser"));return;}
     lastLocationSyncRef.current=0;setLocationLocating(true);setLocationError("");
     sessionStorage.setItem("live_location_enabled","true");setLocationTracking(true);
     try{
@@ -153,7 +155,7 @@ export default function App() {
         const {latitude,longitude}=coords;const now=Date.now();
         if(now-lastLocationSyncRef.current<15000||locationWatchRef.current==null)return;
         lastLocationSyncRef.current=now;
-        setLocation((current)=>({lat:latitude,lng:longitude,city:current?.source==="gps"?current.city:"Position actuelle",district:current?.source==="gps"?current.district:"Position GPS",source:"gps"}));
+        setLocation((current)=>({lat:latitude,lng:longitude,city:current?.source==="gps"?current.city:t("interface.current.location"),district:current?.source==="gps"?current.district:t("interface.gps.location"),source:"gps"}));
         setUser((current)=>current?{...current,lat:latitude,lng:longitude}:current);setLocationLocating(false);setLocationError("");
         const previousLabel=lastLocationLabelRef.current;
         const shouldRefreshLabel=!previousLabel||now-previousLabel.at>=5*60*1000||Math.abs(latitude-previousLabel.lat)>=0.02||Math.abs(longitude-previousLabel.lng)>=0.02;
@@ -161,20 +163,20 @@ export default function App() {
           lastLocationLabelRef.current={lat:latitude,lng:longitude,at:now};
           api.get("/geocode/reverse",{params:{lat:latitude,lng:longitude}}).then(({data})=>{
             if(locationWatchRef.current==null)return;
-            setLocation((current)=>current?.source==="gps"?{...current,city:data.city||"Position actuelle",district:data.district||data.city||"Position GPS"}:current);
+            setLocation((current)=>current?.source==="gps"?{...current,city:data.city||t("interface.current.location"),district:data.district||data.city||t("interface.gps.location")}:current);
           }).catch(()=>{lastLocationLabelRef.current=null;});
         }
         try{const {data}=await api.patch(`/users/${user.id}`,{lat:latitude,lng:longitude,live_location_active:true});if(locationWatchRef.current!=null)setUser(data);}
-        catch{setLocationError("La position est active, mais sa synchronisation a temporairement échoué.");}
+        catch{setLocationError(t("interface.location.is.active.but.synchronization.temporarily.failed"));}
       },(error)=>{
         setLocationLocating(false);
-        if(error.code===error.PERMISSION_DENIED){setLocationError("La localisation est bloquée. Autorisez-la dans les réglages du navigateur, puis réessayez.");stopLiveLocation();return;}
-        setLocationError(error.code===error.TIMEOUT?"La recherche GPS prend du temps. Le suivi reste actif.":"Position GPS momentanément indisponible. Le suivi reste actif.");
+        if(error.code===error.PERMISSION_DENIED){setLocationError(t("interface.location.access.is.blocked.allow.it.in.your.browser.settings.then.try.ag"));stopLiveLocation();return;}
+        setLocationError(error.code===error.TIMEOUT?t("interface.gps.location.is.taking.longer.than.expected.tracking.remains.active"):t("interface.gps.location.is.temporarily.unavailable.tracking.remains.active"));
       },{enableHighAccuracy:true,maximumAge:30000,timeout:30000});
       locationWatchRef.current=watchId;
     }catch{
       sessionStorage.removeItem("live_location_enabled");setLocationTracking(false);setLocationLocating(false);
-      setLocationError("Le navigateur empêche l’activation de la position. Vérifiez l’autorisation de localisation du site.");
+      setLocationError(t("interface.the.browser.prevented.location.activation.check.this.site.s.location.per"));
     }
   }
   function toggleLiveLocation(){if(locationTracking||locationWatchRef.current!=null)stopLiveLocation();else startLiveLocation();}
@@ -196,7 +198,6 @@ export default function App() {
       : <TechDashboard user={user} location={location} onLogout={logout} onUpdateUser={updateUser} locationTracking={locationTracking} locating={locationLocating} locationError={locationError} onToggleLocation={toggleLiveLocation} onClearLocationError={()=>setLocationError("")}/>;
 
   return (
-    <InterfaceLanguageProvider>
       <div className="bg-background min-h-screen" style={{ fontFamily:"Onest,sans-serif" }}>
         <style>{`* { scrollbar-width:none; -ms-overflow-style:none; } *::-webkit-scrollbar { display:none; }`}</style>
         <Routes>
@@ -212,6 +213,5 @@ export default function App() {
         </Routes>
         <InterfaceLanguageSelector/>
       </div>
-    </InterfaceLanguageProvider>
   );
 }
