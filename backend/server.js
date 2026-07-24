@@ -42,7 +42,9 @@ app.use(applicationRouter);
 if (process.env.NODE_ENV === "production") {
   const frontendDist = path.resolve(__dirname, "../frontend/dist");
   app.use(express.static(frontendDist, { maxAge: "1d", index: false }));
-  app.get(/^(?!\/(?:api|conversations|appointments|technicians|notifications|leads|tarifs|blocked-slots|availability|auth|register|login|health|test)).*/, (req, res) => res.sendFile(path.join(frontendDist, "index.html")));
+  app.get(/^(?!\/(?:api|conversations|appointments|technicians|notifications|leads|tarifs|blocked-slots|availability|auth|register|login|health|test)).*/, (req, res) => res.sendFile(path.join(frontendDist, "index.html"), {
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+  }));
 }
 
 app.use((error, req, res, next) => {
