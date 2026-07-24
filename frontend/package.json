@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "build": "vite build",
     "lint": "eslint .",
-    "test:i18n": "node scripts/validate-i18n.mjs",
+    "test:i18n": "node scripts/validate-i18n.mjs && node scripts/audit-ui-text.mjs --check",
     "test:realtime": "node scripts/realtime-smoke.mjs",
     "preview": "vite preview"
   },

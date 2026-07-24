@@ -37,7 +37,7 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [contactTechId, setContactTechId] = useState<number|null>(null);
   const unread = notifications.filter((n)=>!n.read).length;
-  const tabs = [{ id:"chat" as ClientTab,label:"Devis IA",icon:MessageSquare },{ id:"rdv" as ClientTab,label:"Rendez-vous",icon:Calendar },{ id:"map" as ClientTab,label:"Techniciens",icon:MapPin },{ id:"messages" as ClientTab,label:"Messages",icon:MessageCircle }];
+  const tabs = [{ id:"chat" as ClientTab,label:i18n.t("interface.ai.quote"),icon:MessageSquare },{ id:"rdv" as ClientTab,label:i18n.t("interface.appointments"),icon:Calendar },{ id:"map" as ClientTab,label:i18n.t("interface.technicians"),icon:MapPin },{ id:"messages" as ClientTab,label:i18n.t("interface.messages"),icon:MessageCircle }];
 
   useEffect(() => {
     if (tabParam !== tab) navigate(`/client/${tab}`, { replace:true });
@@ -88,8 +88,8 @@ export function ClientDashboard({ user, location, technicians, onLogout, onUpdat
       <header className="relative z-10 bg-white border-b border-border px-3 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI</span></div>
         <div className="relative z-10 flex items-center gap-2 sm:gap-3">
-          {!locationTracking&&(location?.city||user.city)&&<div title="Localisation du profil" className="flex max-w-28 sm:max-w-none items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 shrink-0 text-gray-400"/><span className="truncate">{location?.city||user.city}</span></div>}
-          <button type="button" onClick={()=>onToggleLocation()} aria-pressed={locationTracking} className={`relative z-10 shrink-0 cursor-pointer touch-manipulation flex min-h-9 items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-blue-300 hover:bg-blue-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`pointer-events-none w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="pointer-events-none">{locationTracking?<><span className="hidden sm:inline">{i18n.t("interface.disable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.disable")}</span></>:<><span className="hidden sm:inline">{i18n.t("interface.enable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.enable")}</span></>}</span></button>
+          {!locationTracking&&(location?.city||user.city)&&<div title={i18n.t("interface.profile.location")} className="flex max-w-28 sm:max-w-none items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 shrink-0 text-gray-400"/><span className="truncate">{location?.city||user.city}</span></div>}
+          <button type="button" onClick={()=>onToggleLocation()} aria-pressed={locationTracking} className={`relative z-10 shrink-0 cursor-pointer touch-manipulation flex min-h-9 items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-blue-300 hover:bg-blue-50"}`} title={i18n.t(locationTracking?"interface.disable.my.location":"location.enableLiveLocation")}><Navigation className={`pointer-events-none w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="pointer-events-none">{locationTracking?<><span className="hidden sm:inline">{i18n.t("interface.disable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.disable")}</span></>:<><span className="hidden sm:inline">{i18n.t("interface.enable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.enable")}</span></>}</span></button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-blue-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -152,7 +152,7 @@ function readableDistance(distanceKm: number | null) {
 
 function ClientChat({ technicians, location, onContact, onAppointmentCreated }: { technicians: Technician[]; location: UserLocation | null; onContact: (id: number) => void; onAppointmentCreated: (appointment: Appointment) => void }) {
   const { language:interfaceLanguage, text:t } = useInterfaceLanguage();
-  const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:interfaceLanguage==="fr"?"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro.":"Hello! Describe your HVAC issue or use the microphone." }]);
+  const [messages, setMessages] = useState<ChatMsg[]>([{ role:"bot", text:t("chat.greeting") }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [quote, setQuote] = useState<{ price:number; low:number; high:number; conf:number; currency:string; subtotal:number; minimumAdjustment:number; extraction:any; lines:any[]; matches:any[] }|null>(null);
@@ -175,13 +175,13 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
   // spécialistes exacts restent prioritaires, puis les généralistes peuvent diagnostiquer.
   const matchingTechs = specialists.length > 0 ? specialists : availableTechs;
   const urgency = /urgent|urgence|fumée|fumee|odeur de brûlé|odeur de brule|fuite|étincelle|etincelle/i.test(messages.map((message)=>message.text).join(" ")) ? "critical" : /rapidement|aujourd'hui|vite|en panne complète/i.test(messages.map((message)=>message.text).join(" ")) ? "urgent" : "normal";
-  useEffect(()=>setMessages((current)=>current.length===1&&current[0].role==="bot"?[{role:"bot",text:interfaceLanguage==="fr"?"Bonjour ! Décrivez votre problème HVAC ou utilisez le micro.":"Hello! Describe your HVAC issue or use the microphone."}]:current),[interfaceLanguage]);
+  useEffect(()=>setMessages((current)=>current.length===1&&current[0].role==="bot"?[{role:"bot",text:t("chat.greeting")}]:current),[interfaceLanguage,t]);
   async function loadSuggestedSlots(request: ScheduleRequest = scheduleRequest) {
     setSlotsLoading(true); setSelectedSlot(null); setSlotsError(""); setVisibleSlotCount(4);
     try {
       const { data } = await api.get("/availability/suggestions", { params: { specialty: faultType, urgency, date: request.date || undefined, date_to: request.dateEnd || undefined, period: request.period } });
-      setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), distanceKm: slot.distance_km == null ? null : Number(slot.distance_km), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString("fr-FR", { weekday:"long", day:"numeric", month:"short" }) })));
-    } catch (err) { console.error(err); setProposedSlots([]); setSlotsError("Impossible de consulter les agendas pour le moment. Réessayez dans quelques instants."); }
+      setProposedSlots((data.slots || []).map((slot: any) => ({ date: slot.date, time: String(slot.time).slice(0,5), techId: Number(slot.technician_id), distanceKm: slot.distance_km == null ? null : Number(slot.distance_km), label: new Date(`${slot.date}T12:00:00`).toLocaleDateString(interfaceLanguage==="fr"?"fr-FR":"en-GB", { weekday:"long", day:"numeric", month:"short" }) })));
+    } catch (err) { console.error(err); setProposedSlots([]); setSlotsError(t("interface.unable.to.check.schedules.right.now.please.try.again.shortly")); }
     finally { setSlotsLoading(false); }
   }
   useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[messages,quote,showSlots,priceDecision]);
@@ -224,14 +224,14 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
         setQuote({ price: data.calculation.total, low: data.calculation.range.min, high: data.calculation.range.max, conf: Math.round(data.confidence * 100), currency: data.calculation.currency, subtotal: data.calculation.subtotal ?? data.calculation.total, minimumAdjustment: data.calculation.service_minimum_adjustment ?? 0, extraction: data.extraction || {}, lines: data.calculation.lines || [], matches: data.matches || [] });
       }
       const reply = data.question || data.message;
-      setMessages((m)=>[...m,{role:"bot",text:reply || "Pouvez-vous préciser votre problème HVAC ?"}]);
+      setMessages((m)=>[...m,{role:"bot",text:reply || t("chat.clarifyIssue")}]);
     } catch (err: any) {
       console.error(err);
       const serverMessage = err?.response?.data?.error;
       const status = Number(err?.response?.status || 0);
       const reply = status > 0 && status < 500 && serverMessage
         ? serverMessage
-        : "Désolé, le service de devis est momentanément indisponible.";
+        : t("interface.sorry.the.quote.service.is.temporarily.unavailable");
       setMessages((m)=>[...m,{role:"bot",text:reply}]);
     } finally {
       setLoading(false);
@@ -240,8 +240,8 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
 
   function handlePriceDecision(d: PriceDecision) {
     setPriceDecision(d);
-    if (d==="accept") { setMessages((m)=>[...m,{role:"user",text:"J'accepte ce prix."},{role:"bot",text:`Je consulte maintenant les agendas des spécialistes en ${faultType}.`}]); setShowSlots(true); loadSuggestedSlots(); }
-    else if (d==="decline") setMessages((m)=>[...m,{role:"user",text:"Je décline ce prix."},{role:"bot",text:"Pas de problème. Souhaitez-vous une évaluation gratuite sur site ? Un technicien pourra vous donner un devis précis."}]);
+    if (d==="accept") { setMessages((m)=>[...m,{role:"user",text:t("chat.acceptPrice")},{role:"bot",text:t("chat.checkingSpecialists",{specialty:faultType})}]); setShowSlots(true); loadSuggestedSlots(); }
+    else if (d==="decline") setMessages((m)=>[...m,{role:"user",text:t("chat.declinePrice")},{role:"bot",text:t("chat.offerOnSiteAssessment")}]);
   }
 
   async function confirmSlot() {
@@ -262,14 +262,14 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
       });
       onAppointmentCreated(mapAppointment(data));
       setBooked(true); setShowSlots(false);
-      setMessages((m)=>[...m,{role:"bot",text:`Demande envoyée ! ${selectedSlot.label} à ${selectedSlot.time} avec ${tech.name} (spécialiste ${faultType}). Le rendez-vous apparaîtra comme confirmé dès que le technicien l’acceptera.`}]);
+      setMessages((m)=>[...m,{role:"bot",text:t("chat.requestSent",{label:selectedSlot.label,time:selectedSlot.time,name:tech.name,specialty:faultType})}]);
     } catch (err) {
       console.error(err);
-      setMessages((m)=>[...m,{role:"bot",text:"Impossible de confirmer le rendez-vous, réessayez."}]);
+      setMessages((m)=>[...m,{role:"bot",text:t("interface.unable.to.confirm.the.appointment.please.try.again")}]);
     }
   }
 
-  const suggestions = ["Ma clim Daikin split ne refroidit plus","Climatiseur LG en panne","Chaudière Carrier n'allume plus"];
+  const suggestions = [t("chat.suggestion.cooling"),t("chat.suggestion.acFailure"),t("chat.suggestion.boiler")];
   return (
     <div className="flex flex-col max-w-2xl mx-auto w-full p-4 md:p-6" style={{ height:"calc(100vh - 112px)" }}>
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
@@ -289,10 +289,10 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 text-white">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-xs font-medium opacity-80 mb-1">ESTIMATION — {faultType.toUpperCase()}</div>
+                  <div className="text-xs font-medium opacity-80 mb-1">{t("quote.estimate")} — {faultType.toUpperCase()}</div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-black" style={{ fontFamily:"Onest,sans-serif" }}>{quote.price.toLocaleString("fr-FR")} {quote.currency}</span>
-                    <span className="text-sm opacity-75">{quote.low.toLocaleString("fr-FR")}–{quote.high.toLocaleString("fr-FR")} {quote.currency}</span>
+                    <span className="text-4xl font-black" style={{ fontFamily:"Onest,sans-serif" }}>{quote.price.toLocaleString(interfaceLanguage==="fr"?"fr-FR":"en-GB")} {quote.currency}</span>
+                    <span className="text-sm opacity-75">{quote.low.toLocaleString(interfaceLanguage==="fr"?"fr-FR":"en-GB")}–{quote.high.toLocaleString(interfaceLanguage==="fr"?"fr-FR":"en-GB")} {quote.currency}</span>
                   </div>
                 </div>
                 <div className="text-right text-xs opacity-80">
@@ -367,7 +367,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
             <div className="p-4 border-t border-gray-100 space-y-3">
               <div className="flex gap-2">
                 <button onClick={confirmSlot} disabled={!selectedSlot} className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-40">{i18n.t("interface.confirm")}</button>
-                <button onClick={()=>{ setShowSlots(false); setMessages((m)=>[...m,{role:"user",text:"Non merci."},{role:"bot",text:"Pas de problème. Vous pouvez réserver depuis l'onglet Rendez-vous."}]); }} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.no.thanks")}</button>
+                <button onClick={()=>{ setShowSlots(false); setMessages((m)=>[...m,{role:"user",text:t("chat.noThanks")},{role:"bot",text:t("chat.bookingLater")}]); }} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.no.thanks")}</button>
               </div>
             </div>
           </div>
@@ -377,7 +377,7 @@ function ClientChat({ technicians, location, onContact, onAppointmentCreated }: 
       {messages.length<=1&&<div className="flex flex-wrap gap-2 mb-3">{suggestions.map((s)=><button key={s} onClick={()=>send(s)} className="text-xs px-3 py-1.5 rounded-full bg-white border border-gray-200 text-muted-foreground hover:border-primary/40 hover:text-primary shadow-sm">{s}</button>)}</div>}
       <div className={`bg-white rounded-2xl border shadow-sm flex items-center gap-2 px-3 py-2 transition-all ${isListening?"border-red-400 ring-2 ring-red-100":"border-gray-100"}`}>
         {supported&&<button onClick={toggleMic} className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isListening?"bg-red-500 text-white animate-pulse":"bg-gray-100 text-muted-foreground hover:bg-gray-200"}`}>{isListening?<MicOff className="w-4 h-4"/>:<Mic className="w-4 h-4"/>}</button>}
-        <input value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&send(input)} placeholder={isListening?"Écoute en cours…":"Décrivez votre problème HVAC…"} className="flex-1 text-sm placeholder:text-muted-foreground bg-transparent outline-none"/>
+        <input value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&send(input)} placeholder={t(isListening?"interface.listening":"interface.describe.your.hvac.issue")} className="flex-1 text-sm placeholder:text-muted-foreground bg-transparent outline-none"/>
         <button onClick={()=>send(input)} disabled={!input.trim()||loading} className="w-9 h-9 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-primary/90 disabled:opacity-40 shrink-0"><Send className="w-4 h-4"/></button>
       </div>
     </div>
@@ -437,7 +437,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
             return (
               <div key={appt.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
                 <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
-                  <div className="flex items-start justify-between"><div><div className="font-semibold text-foreground">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="confirmed"?"green":"amber"}>{appt.status==="confirmed"?"Confirmé":"En attente"}</Badge></div>
+                  <div className="flex items-start justify-between"><div><div className="font-semibold text-foreground">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="confirmed"?"green":"amber"}>{i18n.t(appt.status==="confirmed"?"interface.confirmed":"appointment.pending")}</Badge></div>
                   <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div><div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5"/>{appt.time}</div><div className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5"/>{appt.address}</div></div>
                   <div className="mt-3 pt-3 border-t border-gray-100 text-sm"><span className="text-muted-foreground">{i18n.t("interface.estimated.price")} : </span><span className="font-bold">{appt.estimatedPrice} {appt.currency}</span></div>
                   <button onClick={()=>{setCancelError("");setCancelAppt(appt);}} className="mt-3 h-9 px-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100">{i18n.t("interface.cancel.this.appointment")}</button>
@@ -464,7 +464,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
           <div key={appt.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
             <button onClick={()=>setSelectedAppt(isExp?null:appt)} className="w-full p-5 text-left hover:bg-gray-50">
               <div className="flex items-start gap-4">{tech&&<Avatar initials={tech.avatar} color={tech.color}/>}<div className="flex-1">
-                <div className="flex items-start justify-between"><div><div className="font-semibold">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="cancelled"?"red":"blue"}>{appt.status==="cancelled"?"Annulé":"Terminé"}</Badge></div>
+                <div className="flex items-start justify-between"><div><div className="font-semibold">{appt.technicianName}</div><div className="text-sm text-muted-foreground">{appt.service}</div></div><Badge color={appt.status==="cancelled"?"red":"blue"}>{i18n.t(appt.status==="cancelled"?"interface.cancelled":"interface.completed")}</Badge></div>
                 <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5"/>{appt.date}</div>{appt.rating&&<div className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400"/><span className="text-foreground font-medium">{appt.rating}/5</span></div>}</div>
               </div><ChevronRight className={`w-5 h-5 text-muted-foreground transition-transform ${isExp?"rotate-90":""}`}/></div>
             </button>
@@ -472,7 +472,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
               <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
                 <div className="bg-gray-50 rounded-xl p-4">
                   <div className="grid grid-cols-2 gap-4 text-sm mb-3"><div><div className="text-xs text-muted-foreground mb-1">{i18n.t("interface.estimated.price")}</div><div className="font-medium">{appt.estimatedPrice} {appt.currency}</div></div><div><div className="text-xs text-muted-foreground mb-1">{i18n.t("interface.actual.price")}</div><div className="text-lg font-bold">{appt.actualPrice??"—"} {appt.currency}</div></div></div>
-                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>{i18n.t("interface.do.you.confirm.that.you.paid.this.amount")}</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">Oui, j'ai payé {appt.actualPrice} {appt.currency}</button></div>}
+                  {appt.actualPrice&&!appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200"><div className="flex items-center gap-2 text-xs text-amber-600 mb-2"><AlertCircle className="w-3.5 h-3.5"/>{i18n.t("interface.do.you.confirm.that.you.paid.this.amount")}</div><button onClick={()=>confirmPrice(appt.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold">{i18n.t("appointment.confirmPaid",{amount:appt.actualPrice,currency:appt.currency})}</button></div>}
                   {appt.clientConfirmedPrice&&<div className="pt-3 border-t border-gray-200 flex items-center gap-2 text-xs text-emerald-600"><CheckCircle2 className="w-3.5 h-3.5"/>{i18n.t("interface.price.confirmed")}</div>}
                 </div>
                 {appt.caseDescription&&<div><div className="text-xs font-medium text-muted-foreground mb-2">{i18n.t("interface.description")}</div><div className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-3">{appt.caseDescription}</div></div>}
@@ -499,7 +499,7 @@ function ClientRdv({ technicians, appointments, setAppointments }:
           <p className="mt-2 text-sm text-muted-foreground">{i18n.t("interface.cancel.appointment.question")} <strong className="text-foreground">{cancelAppt.technicianName}</strong>, {i18n.t("interface.scheduled.on")} {cancelAppt.date} {i18n.t("interface.at")} {cancelAppt.time} ?</p>
           <p className="mt-2 text-xs text-red-600">{i18n.t("interface.the.technician.will.be.notified.immediately")}</p>
           {cancelError&&<div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">{cancelError}</div>}
-          <div className="mt-6 flex gap-2"><button onClick={()=>setCancelAppt(null)} disabled={cancelling} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50">{i18n.t("interface.keep.appointment")}</button><button onClick={cancelAppointment} disabled={cancelling} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{cancelling?"Annulation…":"Oui, annuler"}</button></div>
+          <div className="mt-6 flex gap-2"><button onClick={()=>setCancelAppt(null)} disabled={cancelling} className="flex-1 h-10 rounded-xl border border-gray-200 text-sm font-semibold disabled:opacity-50">{i18n.t("interface.keep.appointment")}</button><button onClick={cancelAppointment} disabled={cancelling} className="flex-1 h-10 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{i18n.t(cancelling?"appointment.cancelling":"interface.yes.cancel")}</button></div>
         </div>
       </div>}
     </div>
@@ -534,7 +534,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
 
   async function toggleBlock(technician: Technician) {
     const blocked = blockedTechs.has(technician.id);
-    if (!blocked && !window.confirm(`Bloquer ${technician.name} ? Ce technicien ne vous sera plus proposé automatiquement.`)) return;
+    if (!blocked && !window.confirm(i18n.t("map.blockTechnicianConfirmation",{name:technician.name}))) return;
     try {
       if (blocked) await api.delete(`/technicians/${technician.id}/block`);
       else await api.post(`/technicians/${technician.id}/block`);
@@ -569,7 +569,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
             <button onClick={()=>setShowAvailOnly(!showAvailOnly)} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${showAvailOnly?"bg-emerald-500 text-white border-emerald-500":"border-gray-200 text-muted-foreground"}`}><span className={`w-1.5 h-1.5 rounded-full ${showAvailOnly?"bg-white":"bg-emerald-400"}`}/>{t("interface.available.2")}</button>
             {["Climatisation","Chauffage","Installation","Réparation"].map((spec)=><button key={spec} onClick={()=>setFilterSpec(filterSpec===spec?null:spec)} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${filterSpec===spec?"bg-primary text-white border-primary":"border-gray-200 text-muted-foreground"}`}>{specialtyLabel(spec)}</button>)}
           </div>
-          {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{filtered.length} technicien(s) · depuis <strong>{location.city}</strong></div>}
+          {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{t("map.techniciansFrom",{count:filtered.length,city:location.city})}</div>}
         </div>
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {filtered.map((t)=>{
@@ -587,7 +587,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                   <div className="flex items-start gap-3">
                     <div className="relative"><Avatar initials={t.avatar} color={t.color}/>{t.available&&<span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-white"/>}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm == null ? (language==="fr"?"Distance indisponible":"Distance unavailable") : `${t.distanceKm.toFixed(1)} km`}</span></div>
+                      <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm == null ? i18n.t("interface.distance.unavailable") : `${t.distanceKm.toFixed(1)} km`}</span></div>
                       <div className="flex flex-wrap gap-1 mt-1">{t.specializations.slice(0,2).map((s)=><span key={s} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{specialtyLabel(s)}</span>)}</div>
                       <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className={`w-3 h-3 ${aggregateReviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span className="text-xs font-medium">{aggregateReviews>0?aggregateRating:"—"}</span><span className="text-xs text-muted-foreground">({t("interface.customer.reviews",{count:aggregateReviews})})</span></div><Badge color={isBlocked?"red":t.available?"green":"gray"}>{isBlocked?t("interface.blocked"):t.available?t("interface.available"):t("interface.unavailable")}</Badge>{isContacted&&<Badge color="blue">{t("interface.contacted")}</Badge>}</div>
                     </div>
@@ -600,8 +600,8 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                     <div className="flex flex-wrap gap-1">{t.tags.map((tag)=><span key={tag} className="px-2 py-0.5 rounded-full bg-gray-100 text-xs text-gray-600">{tag}</span>)}</div>
                     {aggregateReviews>0&&<div className="rounded-lg border border-gray-100 bg-white p-2 space-y-2"><div className="text-[11px] font-semibold text-muted-foreground">{i18n.t("interface.recent.customer.reviews")}</div>{(publicRatings[t.id]||[]).slice(0,3).map((review,index)=><div key={index} className="border-t border-gray-50 pt-2"><div className="flex items-center justify-between"><span className="text-xs font-medium">{review.client_name}</span><span className="text-xs text-amber-500">{"★".repeat(review.rating)}</span></div>{review.comment&&<p className="text-xs text-muted-foreground mt-0.5">{review.comment}</p>}</div>)}</div>}
                     <button onClick={()=>onContact(t.id)} className="w-full h-8 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90">{i18n.t("interface.open.conversation")}</button>
-                    <button onClick={()=>toggleBlock(t)} className={`w-full h-8 rounded-lg border text-xs flex items-center justify-center gap-1.5 ${isBlocked?"border-emerald-200 text-emerald-700 hover:bg-emerald-50":"border-red-200 text-red-600 hover:bg-red-50"}`}><BanIcon className="w-3.5 h-3.5"/>{isBlocked?"Débloquer ce technicien":"Bloquer ce technicien"}</button>
-                    {ratingAllowed&&!isRating&&<button onClick={()=>{setRatingTech(t.id);setRatingDraft({rating:personalRating||0,comment:existing?.comment??t.myRatingComment??""});}} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{personalRating?`Votre note : ${personalRating}/5 — modifier`:"Évaluer ce technicien"}</button>}
+                    <button onClick={()=>toggleBlock(t)} className={`w-full h-8 rounded-lg border text-xs flex items-center justify-center gap-1.5 ${isBlocked?"border-emerald-200 text-emerald-700 hover:bg-emerald-50":"border-red-200 text-red-600 hover:bg-red-50"}`}><BanIcon className="w-3.5 h-3.5"/>{i18n.t(isBlocked?"interface.unblock.this.technician":"interface.block.this.technician")}</button>
+                    {ratingAllowed&&!isRating&&<button onClick={()=>{setRatingTech(t.id);setRatingDraft({rating:personalRating||0,comment:existing?.comment??t.myRatingComment??""});}} className="w-full h-8 rounded-lg border border-gray-200 text-xs hover:bg-gray-50 flex items-center justify-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-400"/>{personalRating?i18n.t("rating.yourRating",{rating:personalRating}):i18n.t("interface.rate.this.technician")}</button>}
                     {!ratingAllowed&&<div className="text-[11px] text-muted-foreground text-center">{i18n.t("interface.contact.this.technician.before.leaving.a.rating")}</div>}
                     {isRating&&ratingAllowed&&(
                       <div className="space-y-2 p-3 bg-gray-50 rounded-lg border border-gray-200">

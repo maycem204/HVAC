@@ -37,7 +37,7 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, location
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [stats, setStats] = useState({ jobsThisMonth: 0, revenue: 0, avgRating: 0 });
   const unread = notifications.filter((n)=>!n.read).length;
-  const tabs = [{ id:"leads" as TechTab,label:"Leads",icon:Users },{ id:"messages" as TechTab,label:"Messages",icon:MessageCircle },{ id:"tarifs" as TechTab,label:"Tarification",icon:DollarSign },{ id:"agenda" as TechTab,label:"Agenda",icon:Calendar }];
+  const tabs = [{ id:"leads" as TechTab,label:i18n.t("interface.incoming.leads"),icon:Users },{ id:"messages" as TechTab,label:i18n.t("interface.messages"),icon:MessageCircle },{ id:"tarifs" as TechTab,label:i18n.t("interface.pricing"),icon:DollarSign },{ id:"agenda" as TechTab,label:i18n.t("interface.schedule"),icon:Calendar }];
 
   useEffect(() => {
     if (tabParam !== tab) navigate(`/technicien/${tab}`, { replace:true });
@@ -78,11 +78,11 @@ export function TechDashboard({ user, location, onLogout, onUpdateUser, location
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center"><Wrench className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI Pro</span><Badge color="green">Technicien</Badge></div>
+        <div className="flex items-center gap-3"><div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center"><Wrench className="w-3.5 h-3.5 text-white"/></div><span className="font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>QuoteAI Pro</span><Badge color="green">{i18n.t("profile.technician")}</Badge></div>
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">{i18n.t("interface.this.month")}</div><div className="text-sm font-bold">{stats.jobsThisMonth} jobs</div></div><div><div className="text-xs text-muted-foreground">{i18n.t("interface.revenue")}</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><button onClick={()=>setRatingsOpen(true)} className="rounded-lg px-2 py-1 hover:bg-amber-50" title={i18n.t("interface.view.rating.details")}><div className="text-xs text-muted-foreground">{i18n.t("interface.average.rating")}</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></button></div>
-          {!locationTracking&&(location?.city||user.city)&&<div title="Localisation du profil" className="hidden sm:flex max-w-36 items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 shrink-0 text-gray-400"/><span className="truncate">{location?.city||user.city}</span></div>}
-          <button type="button" onClick={()=>onToggleLocation()} aria-pressed={locationTracking} className={`relative z-10 shrink-0 cursor-pointer touch-manipulation flex min-h-9 items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50"}`} title={locationTracking?"Désactiver ma position":"Activer ma position en direct"}><Navigation className={`pointer-events-none w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="pointer-events-none">{locationTracking?<><span className="hidden sm:inline">{i18n.t("interface.disable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.disable")}</span></>:"Activer ma position"}</span></button>
+          <div className="hidden md:flex items-center gap-5 mr-2 text-center"><div><div className="text-xs text-muted-foreground">{i18n.t("interface.this.month")}</div><div className="text-sm font-bold">{i18n.t("technician.jobs",{count:stats.jobsThisMonth})}</div></div><div><div className="text-xs text-muted-foreground">{i18n.t("interface.revenue")}</div><div className="text-sm font-bold text-emerald-600">{stats.revenue} €</div></div><button onClick={()=>setRatingsOpen(true)} className="rounded-lg px-2 py-1 hover:bg-amber-50" title={i18n.t("interface.view.rating.details")}><div className="text-xs text-muted-foreground">{i18n.t("interface.average.rating")}</div><div className="text-sm font-bold text-amber-500">{stats.avgRating} ★</div></button></div>
+          {!locationTracking&&(location?.city||user.city)&&<div title={i18n.t("interface.profile.location")} className="hidden sm:flex max-w-36 items-center gap-1.5 text-xs text-muted-foreground bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200"><Navigation className="w-3 h-3 shrink-0 text-gray-400"/><span className="truncate">{location?.city||user.city}</span></div>}
+          <button type="button" onClick={()=>onToggleLocation()} aria-pressed={locationTracking} className={`relative z-10 shrink-0 cursor-pointer touch-manipulation flex min-h-9 items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${locationTracking?"border-red-300 bg-red-50 text-red-700 hover:bg-red-100":"border-gray-200 bg-gray-50 text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50"}`} title={i18n.t(locationTracking?"interface.disable.my.location":"location.enableLiveLocation")}><Navigation className={`pointer-events-none w-3 h-3 ${locationTracking?"text-red-600":"text-gray-400"} ${locating?"animate-pulse":""}`}/><span className="pointer-events-none">{locationTracking?<><span className="hidden sm:inline">{i18n.t("interface.disable.my.location")}</span><span className="sm:hidden">{i18n.t("interface.disable")}</span></>:i18n.t("interface.enable.my.location")}</span></button>
           <div className="relative"><button onClick={()=>setNotifOpen(!notifOpen)} className="relative w-9 h-9 rounded-xl hover:bg-gray-100 flex items-center justify-center text-muted-foreground hover:text-foreground"><Bell className="w-5 h-5"/>{unread>0&&<span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unread}</span>}</button></div>
           <button onClick={()=>setProfileOpen(true)} className="flex items-center gap-2 hover:bg-gray-50 rounded-xl px-2 py-1 transition-colors"><Avatar initials={user.avatar || user.name.slice(0,2).toUpperCase()} color="bg-emerald-500" size="sm"/><span className="text-sm font-medium hidden sm:block">{user.name}</span></button>
           <button onClick={onLogout} className="text-muted-foreground hover:text-foreground"><LogOut className="w-4 h-4"/></button>
@@ -116,7 +116,7 @@ function TechRatings({ technicianId, onClose }: { technicianId: number; onClose:
     setLoading(true); setError("");
     api.get(`/technicians/${technicianId}/ratings`)
       .then(({ data }) => setRatings(data.map((row: any) => ({ ...row, rating:Number(row.rating) }))))
-      .catch(() => setError("Impossible de charger vos évaluations pour le moment."))
+      .catch(() => setError(i18n.t("interface.unable.to.load.your.ratings.right.now")))
       .finally(() => setLoading(false));
   }, [technicianId]);
 
@@ -132,10 +132,10 @@ function TechRatings({ technicianId, onClose }: { technicianId: number; onClose:
       :ratings.length===0?<div className="rounded-2xl border border-gray-100 bg-white p-10 text-center"><Star className="w-10 h-10 mx-auto text-gray-300 mb-3"/><div className="font-semibold">{i18n.t("interface.no.ratings.yet")}</div><div className="text-sm text-muted-foreground mt-1">{i18n.t("interface.reviews.will.appear.here.after.customers.rate.completed.jobs")}</div></div>
       :<>
         <div className="grid md:grid-cols-[220px_1fr] gap-4 mb-6">
-          <div className="rounded-2xl border border-gray-100 bg-white p-5 text-center"><div className="text-4xl font-black text-amber-500">{average.toFixed(1)}</div><div className="flex justify-center gap-1 my-2">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=Math.round(average)?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div><div className="text-xs text-muted-foreground">{ratings.length} avis client{ratings.length>1?"s":""}</div></div>
+          <div className="rounded-2xl border border-gray-100 bg-white p-5 text-center"><div className="text-4xl font-black text-amber-500">{average.toFixed(1)}</div><div className="flex justify-center gap-1 my-2">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=Math.round(average)?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div><div className="text-xs text-muted-foreground">{i18n.t("interface.customer.reviews",{count:ratings.length})}</div></div>
           <div className="rounded-2xl border border-gray-100 bg-white p-5 space-y-2">{distribution.map(({score,count})=><div key={score} className="flex items-center gap-3 text-xs"><span className="w-8 font-medium">{score} ★</span><div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{width:`${ratings.length?count/ratings.length*100:0}%`}}/></div><span className="w-6 text-right text-muted-foreground">{count}</span></div>)}</div>
         </div>
-        <div className="space-y-3">{ratings.map((item,index)=><article key={`${item.client_name}-${item.updated_at}-${index}`} className="rounded-2xl border border-gray-100 bg-white p-4"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-sm">{item.client_name}</div><div className="flex gap-0.5 mt-1">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=item.rating?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div></div><time className="text-xs text-muted-foreground">{new Date(item.updated_at).toLocaleDateString("fr-FR")}</time></div>{item.comment?<p className="mt-3 text-sm leading-relaxed text-slate-700">{item.comment}</p>:<p className="mt-3 text-xs italic text-muted-foreground">{i18n.t("interface.no.written.comment")}</p>}</article>)}</div>
+        <div className="space-y-3">{ratings.map((item,index)=><article key={`${item.client_name}-${item.updated_at}-${index}`} className="rounded-2xl border border-gray-100 bg-white p-4"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-sm">{item.client_name}</div><div className="flex gap-0.5 mt-1">{[1,2,3,4,5].map((score)=><Star key={score} className={`w-4 h-4 ${score<=item.rating?"fill-amber-400 text-amber-400":"text-gray-200"}`}/>)}</div></div><time className="text-xs text-muted-foreground">{new Date(item.updated_at).toLocaleDateString(i18n.resolvedLanguage==="en"?"en-GB":"fr-FR")}</time></div>{item.comment?<p className="mt-3 text-sm leading-relaxed text-slate-700">{item.comment}</p>:<p className="mt-3 text-xs italic text-muted-foreground">{i18n.t("interface.no.written.comment")}</p>}</article>)}</div>
       </>}
     </div>
     </div>
@@ -147,7 +147,7 @@ function TechRatings({ technicianId, onClose }: { technicianId: number; onClose:
 function LeadDetails({ lead }: { lead: Lead }) {
   const details = lead.diagnosticDetails;
   const faults = details?.faults || [];
-  const statusLabel = lead.status === "new" ? "Nouveau" : lead.status === "accepted" ? "Accepté" : "Clôturé";
+  const statusLabel = i18n.t(lead.status === "new" ? "interface.new" : lead.status === "accepted" ? "interface.accepted" : "interface.closed.2");
   const age = details?.equipment_age_years != null ? `${details.equipment_age_years} an(s)` : details?.equipment_age_band;
   return (
     <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 p-4 text-xs space-y-4">
@@ -224,7 +224,7 @@ function TechLeads() {
       else setReassignmentFailed((current)=>new Set(current).add(id));
     } catch (err: any) {
       console.error(err);
-      setReassignmentErrors((current)=>({...current,[id]:err?.response?.data?.error || "Impossible de réaffecter cette demande pour le moment."}));
+      setReassignmentErrors((current)=>({...current,[id]:err?.response?.data?.error || i18n.t("interface.unable.to.reassign.this.request.right.now")}));
     } finally {
       setReassigning(null);
     }
@@ -234,7 +234,7 @@ function TechLeads() {
     <div className="p-4 md:p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div><h2 className="text-xl font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{i18n.t("interface.incoming.leads")}</h2><p className="text-sm text-muted-foreground">{i18n.t("interface.if.you.decline.the.ai.engine.automatically.searches.for.another.technici")}</p></div>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">{(["all","new","accepted","done"] as const).map((f)=><button key={f} onClick={()=>setFilter(f)} className={`px-3 h-7 rounded-md text-xs font-medium ${filter===f?"bg-white shadow-sm text-foreground":"text-muted-foreground"}`}>{f==="all"?"Tous":f==="new"?"Nouveaux":f==="accepted"?"Acceptés":"Terminés"}</button>)}</div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">{(["all","new","accepted","done"] as const).map((f)=><button key={f} onClick={()=>setFilter(f)} className={`px-3 h-7 rounded-md text-xs font-medium ${filter===f?"bg-white shadow-sm text-foreground":"text-muted-foreground"}`}>{i18n.t(`leads.filters.${f}`)}</button>)}</div>
       </div>
       <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={query} onChange={(event)=>setQuery(event.target.value)} placeholder={i18n.t("interface.search.for.a.customer.issue.or.city")} className="w-full h-10 pl-10 pr-3 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-blue-400"/></div>
       {loading && <div className="text-sm text-muted-foreground">{i18n.t("interface.loading.leads")}</div>}
@@ -243,11 +243,11 @@ function TechLeads() {
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{lead.client[0]}</div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price.toLocaleString("fr-FR")} {lead.currency}</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
+              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price.toLocaleString(i18n.resolvedLanguage==="en"?"en-GB":"fr-FR")} {lead.currency}</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
               <div className="mt-2 text-sm">{lead.problem}</div>
-              {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} à {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
+              {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} {i18n.t("interface.at")} {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
               <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">{i18n.t("interface.ai.confidence")}</div><ConfidenceBar value={lead.confidence}/></div>
-              <button onClick={()=>setExpanded(expanded===lead.id?null:lead.id)} className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1">{expanded===lead.id?"Masquer les détails":"Voir toutes les informations"}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded===lead.id?"rotate-180":""}`}/></button>
+              <button onClick={()=>setExpanded(expanded===lead.id?null:lead.id)} className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1">{i18n.t(expanded===lead.id?"interface.hide.details":"leads.viewAllInformation")}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded===lead.id?"rotate-180":""}`}/></button>
               {expanded===lead.id&&<LeadDetails lead={lead}/>}
               {reassigning===lead.id?<div className="mt-3 flex items-center gap-2 text-sm text-blue-600"><RefreshCw className="w-4 h-4 animate-spin"/>{i18n.t("interface.ai.engine.is.searching.for.another.technician")}</div>
               :reassigned[lead.id]?<div className="mt-3 flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2"><CheckCircle2 className="w-4 h-4 shrink-0"/>{i18n.t("interface.lead.reassigned.to")} <strong>{reassigned[lead.id]}</strong> {i18n.t("interface.same.slot.notified")}</div>
@@ -258,7 +258,7 @@ function TechLeads() {
                   {lead.status==="new"&&<><button onClick={()=>accept(lead.id)} className="h-8 px-4 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 flex items-center gap-1.5"><Check className="w-3.5 h-3.5"/>{i18n.t("interface.accept")}</button><button onClick={()=>decline(lead.id)} className="h-8 px-4 rounded-lg border border-red-200 text-xs text-red-500 hover:bg-red-50 flex items-center gap-1.5"><X className="w-3.5 h-3.5"/>{i18n.t("interface.decline")}</button></>}
                   {lead.status==="accepted"&&<Badge color="green">{i18n.t("interface.accepted")}</Badge>}
                   {lead.status==="done"&&<Badge color="gray">{i18n.t("interface.closed.2")}</Badge>}
-                  <Badge color={lead.status==="new"?"amber":"gray"}>{lead.status==="new"?"Nouveau":lead.status==="accepted"?"En cours":"Clôturé"}</Badge>
+                  <Badge color={lead.status==="new"?"amber":"gray"}>{i18n.t(lead.status==="new"?"interface.new":lead.status==="accepted"?"leads.inProgress":"interface.closed.2")}</Badge>
                 </div>
               )}
             </div>
@@ -287,7 +287,7 @@ function TechTarifs({ city }: { city: string }) {
 
   useEffect(() => {
     api.get("/tarifs").then((res) => setTarifs(res.data)).catch(console.error);
-    api.get("/tarifs/context").then((res)=>setProfileCurrency(res.data.currency)).catch(()=>setProfileCurrency(`Ville à préciser (${city||"profil"})`));
+    api.get("/tarifs/context").then((res)=>setProfileCurrency(res.data.currency)).catch(()=>setProfileCurrency(i18n.t("pricing.cityRequired",{city:city||i18n.t("profile.profile")})));
   }, [city]);
 
   const onDrop = useCallback(async (accepted: File[])=>{
@@ -307,7 +307,7 @@ function TechTarifs({ city }: { city: string }) {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    onDropRejected:(rejections)=>{ setUploadStatus("error"); setUploadError(rejections[0]?.errors[0]?.code==="file-too-large"?"Le fichier dépasse 5 Mo.":"Format accepté : CSV, Excel .xlsx/.xlsm ou PDF texte."); },
+    onDropRejected:(rejections)=>{ setUploadStatus("error"); setUploadError(i18n.t(rejections[0]?.errors[0]?.code==="file-too-large"?"interface.file.exceeds.5.mb":"interface.accepted.formats.csv.excel.xlsx.xlsm.or.text.pdf")); },
     accept:{"text/csv":[".csv"],"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":[".xlsx",".xlsm"],"application/pdf":[".pdf"]}, multiple:false, maxSize:5*1024*1024
   });
 
@@ -340,7 +340,7 @@ function TechTarifs({ city }: { city: string }) {
           <input {...getInputProps()}/>
           {uploadStatus==="idle"&&<><Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground"/><div className="text-sm font-medium mb-1">{isDragActive?t("interface.drop.here"):t("interface.import.your.pricing.list")}</div><div className="text-xs text-muted-foreground">{t("interface.csv.excel.xlsx.xlsm.or.text.pdf.5.mb.maximum")}</div></>}
           {uploadStatus==="processing"&&<div className="flex flex-col items-center gap-3"><div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin"/><div className="text-sm text-muted-foreground">{i18n.t("interface.extracting")}</div></div>}
-          {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">Grille importée en {profileCurrency}</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">{i18n.t("interface.import.another.file")}</button></>}
+          {uploadStatus==="success"&&<><CheckCircle2 className="w-8 h-8 mx-auto mb-3 text-emerald-500"/><div className="text-sm font-medium text-emerald-700 mb-1">{i18n.t("pricing.listImported",{currency:profileCurrency})}</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");}} className="text-xs text-emerald-600 hover:underline">{i18n.t("interface.import.another.file")}</button></>}
           {uploadStatus==="error"&&<><AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-400"/><div className="text-sm font-medium text-red-600 mb-1">{i18n.t("interface.extraction.failed")}</div><div className="text-xs text-red-500 mb-2">{uploadError}</div><button onClick={(e)=>{e.stopPropagation();setUploadStatus("idle");setUploadError("");}} className="text-xs text-primary hover:underline">{i18n.t("interface.try.again")}</button></>}
         </div>
       </div>}
@@ -349,9 +349,9 @@ function TechTarifs({ city }: { city: string }) {
         <div className="bg-white rounded-xl border border-emerald-200 p-5 mb-5 shadow-sm">
           <div className="text-sm font-semibold mb-4">{i18n.t("interface.new.service")}</div>
           <div className="grid grid-cols-2 gap-3 mb-3">
-            <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">{i18n.t("interface.name")}</label><input placeholder="Ex : Nettoyage filtre" value={newTarif.service} onChange={(e)=>setNewTarif((p)=>({...p,service:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
-            <div><label className="block text-xs text-muted-foreground mb-1">{i18n.t("interface.unit")}</label><input placeholder="/ appareil" value={newTarif.unit} onChange={(e)=>setNewTarif((p)=>({...p,unit:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
-            <div><label className="block text-xs text-muted-foreground mb-1">Prix ({profileCurrency})</label><input type="number" placeholder="0" value={newTarif.price} onChange={(e)=>setNewTarif((p)=>({...p,price:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">{i18n.t("interface.name")}</label><input placeholder={i18n.t("pricing.serviceExample")} value={newTarif.service} onChange={(e)=>setNewTarif((p)=>({...p,service:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div><label className="block text-xs text-muted-foreground mb-1">{i18n.t("interface.unit")}</label><input placeholder={i18n.t("pricing.unitExample")} value={newTarif.unit} onChange={(e)=>setNewTarif((p)=>({...p,unit:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
+            <div><label className="block text-xs text-muted-foreground mb-1">{i18n.t("pricing.priceWithCurrency",{currency:profileCurrency})}</label><input type="number" placeholder="0" value={newTarif.price} onChange={(e)=>setNewTarif((p)=>({...p,price:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
             <div className="col-span-2"><label className="block text-xs text-muted-foreground mb-1">{i18n.t("interface.category")}</label><select value={newTarif.category} onChange={(e)=>setNewTarif((p)=>({...p,category:e.target.value}))} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400">{categories.map((c)=><option key={c}>{c}</option>)}</select></div>
           </div>
           <div className="flex gap-2"><button onClick={addTarif} className="h-8 px-4 rounded-lg bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600">{i18n.t("interface.add")}</button><button onClick={()=>setShowAdd(false)} className="h-8 px-4 rounded-lg border border-gray-200 text-xs text-muted-foreground">{i18n.t("interface.cancel")}</button></div>
@@ -492,7 +492,7 @@ function TechAgenda({ technicianLocation }: { technicianLocation:UserLocation|nu
 
   function callClient(appt: Appointment) {
     if (!appt.clientPhone) {
-      alert("Aucun numéro de téléphone enregistré pour ce client.");
+      alert(i18n.t("schedule.noPhone"));
       return;
     }
     window.location.href = `tel:${appt.clientPhone}`;
@@ -514,7 +514,7 @@ function TechAgenda({ technicianLocation }: { technicianLocation:UserLocation|nu
   }
 
   const dayApts = apptForDay(selectedDay);
-  const ss: Record<string,{dot:string;badge:string;label:string}> = { confirmed:{dot:"bg-blue-500",badge:"bg-blue-50 text-blue-700 border-blue-100",label:"Confirmé"}, pending:{dot:"bg-amber-500",badge:"bg-amber-50 text-amber-700 border-amber-100",label:"En attente"}, completed:{dot:"bg-emerald-500",badge:"bg-emerald-50 text-emerald-700 border-emerald-100",label:"Terminé"}, cancelled:{dot:"bg-red-400",badge:"bg-red-50 text-red-700 border-red-100",label:"Annulé"} };
+  const ss: Record<string,{dot:string;badge:string;label:string}> = { confirmed:{dot:"bg-blue-500",badge:"bg-blue-50 text-blue-700 border-blue-100",label:i18n.t("interface.confirmed")}, pending:{dot:"bg-amber-500",badge:"bg-amber-50 text-amber-700 border-amber-100",label:i18n.t("appointment.pending")}, completed:{dot:"bg-emerald-500",badge:"bg-emerald-50 text-emerald-700 border-emerald-100",label:i18n.t("interface.completed")}, cancelled:{dot:"bg-red-400",badge:"bg-red-50 text-red-700 border-red-100",label:i18n.t("interface.cancelled")} };
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       <div className="grid md:grid-cols-[380px_1fr] gap-6">
@@ -551,7 +551,7 @@ function TechAgenda({ technicianLocation }: { technicianLocation:UserLocation|nu
                 <div className="w-px bg-gray-100 self-stretch"/>
                 <div className="flex-1">
                   <div className="flex items-start justify-between"><div><div className="font-semibold text-sm">{appt.service}</div><div className="text-sm mt-0.5">{appt.client}</div></div><span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${s.badge}`}>{s.label}</span></div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2"><MapPin className="w-3 h-3"/>{appt.address || appt.clientProfileAddress || appt.clientCity || "Localisation non renseignée"}</div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2"><MapPin className="w-3 h-3"/>{appt.address || appt.clientProfileAddress || appt.clientCity || i18n.t("interface.location.not.provided")}</div>
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="text-sm mb-2"><span className="text-muted-foreground">{i18n.t("interface.estimated.price")} : </span><span className="font-bold">{appt.estimatedPrice} {appt.currency}</span></div>
                     {appt.status==="completed"&&appt.actualPrice?<div><div className="text-sm mb-1"><span className="text-muted-foreground">{i18n.t("interface.actual.price")} : </span><span className="font-bold text-emerald-600">{appt.actualPrice} {appt.currency}</span></div>{appt.caseDescription&&<div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded-lg mt-1">{appt.caseDescription}</div>}</div>
@@ -572,9 +572,9 @@ function TechAgenda({ technicianLocation }: { technicianLocation:UserLocation|nu
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl">
             <h3 className="text-lg font-bold mb-4" style={{ fontFamily:"Onest,sans-serif" }}>{i18n.t("interface.complete.the.job")}</h3>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-3 text-sm"><div><div className="text-xs text-muted-foreground">Client</div><div className="font-medium">{selectedAppt.client}</div></div><div><div className="text-xs text-muted-foreground">{i18n.t("interface.estimated.price")}</div><div className="font-medium">{selectedAppt.estimatedPrice} €</div></div></div>
+              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-3 text-sm"><div><div className="text-xs text-muted-foreground">{i18n.t("profile.client")}</div><div className="font-medium">{selectedAppt.client}</div></div><div><div className="text-xs text-muted-foreground">{i18n.t("interface.estimated.price")}</div><div className="font-medium">{selectedAppt.estimatedPrice} {selectedAppt.currency}</div></div></div>
               <div><label className="block text-xs font-medium mb-2">{i18n.t("interface.actual.amount.charged")} <span className="text-red-500">*</span></label><input type="number" placeholder="0" value={actualPrice} onChange={(e)=>setActualPrice(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/></div>
-              <div><label className="block text-xs font-medium mb-2">{i18n.t("interface.case.description")} <span className="text-muted-foreground font-normal">(enrichit la base IA)</span></label><textarea placeholder="Ex : Compresseur HS remplacé, recharge R32…" value={caseDesc} onChange={(e)=>setCaseDesc(e.target.value)} className="w-full h-24 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400 resize-none"/><div className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><TrendingUp className="w-3 h-3"/>{i18n.t("interface.improves.future.ai.estimates")}</div></div>
+              <div><label className="block text-xs font-medium mb-2">{i18n.t("interface.case.description")} <span className="text-muted-foreground font-normal">{i18n.t("pricing.enrichesAiDatabase")}</span></label><textarea placeholder={i18n.t("pricing.caseDescriptionExample")} value={caseDesc} onChange={(e)=>setCaseDesc(e.target.value)} className="w-full h-24 px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400 resize-none"/><div className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><TrendingUp className="w-3 h-3"/>{i18n.t("interface.improves.future.ai.estimates")}</div></div>
               {priceSaved?<div className="flex items-center justify-center gap-2 h-10 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>{i18n.t("interface.saved")}</div>:<div className="flex gap-2"><button onClick={savePrice} disabled={!actualPrice} className="flex-1 h-10 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600 disabled:opacity-40">{i18n.t("interface.save")}</button><button onClick={()=>setShowPriceModal(false)} className="h-10 px-4 rounded-lg border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.cancel")}</button></div>}
             </div>
           </div>
@@ -593,9 +593,9 @@ function WorkingHoursModal({ initialHours, onClose, onSave }: { initialHours:Wor
   const [error,setError]=useState("");
   function update(weekDay:number, values:Partial<WorkingHour>){setHours((items)=>items.map((item)=>item.weekDay===weekDay?{...item,...values}:item));}
   async function submit(){
-    if(hours.some((item)=>item.enabled&&item.startTime>=item.endTime)){setError("L’heure de fin doit être après l’heure de début.");return;}
+    if(hours.some((item)=>item.enabled&&item.startTime>=item.endTime)){setError(i18n.t("interface.the.end.time.must.be.after.the.start.time"));return;}
     setSaving(true);setError("");
-    try { await onSave(hours); } catch (err:any) { setError(err?.response?.data?.error||"Impossible d’enregistrer les horaires."); setSaving(false); }
+    try { await onSave(hours); } catch (err:any) { setError(err?.response?.data?.error||i18n.t("interface.unable.to.save.working.hours")); setSaving(false); }
   }
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
@@ -606,7 +606,7 @@ function WorkingHoursModal({ initialHours, onClose, onSave }: { initialHours:Wor
           {item.enabled?<div className="flex items-center gap-2"><input aria-label={`${i18n.t("interface.start")} ${modalDayNames[item.weekDay]}`} type="time" value={item.startTime} onChange={(event)=>update(item.weekDay,{startTime:event.target.value})} className="min-w-0 w-full h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm"/><span className="text-muted-foreground">{i18n.t("interface.at")}</span><input aria-label={`${i18n.t("interface.end")} ${modalDayNames[item.weekDay]}`} type="time" value={item.endTime} onChange={(event)=>update(item.weekDay,{endTime:event.target.value})} className="min-w-0 w-full h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm"/></div>:<div className="text-xs text-muted-foreground">{i18n.t("interface.non.working.day")}</div>}
         </div>)}</div>
         {error&&<div className="mt-3 rounded-lg bg-red-50 border border-red-100 p-2.5 text-xs text-red-600">{error}</div>}
-        <div className="flex gap-2 mt-5"><button onClick={submit} disabled={saving} className="flex-1 h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">{saving?"Enregistrement…":"Enregistrer les horaires"}</button><button onClick={onClose} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.cancel")}</button></div>
+        <div className="flex gap-2 mt-5"><button onClick={submit} disabled={saving} className="flex-1 h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">{i18n.t(saving?"profile.saving":"interface.save.working.hours")}</button><button onClick={onClose} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.cancel")}</button></div>
       </div>
     </div>
   );
@@ -619,17 +619,17 @@ function BlockSlotModal({ onClose, onSave }: { onClose: ()=>void; onSave: (b: Om
   const [date, setDate] = useState(""); const [weekDays, setWeekDays] = useState<number[]>([]);
   const [startTime, setStartTime] = useState("08:00"); const [endTime, setEndTime] = useState("18:00"); const [label, setLabel] = useState("");
   function toggleDay(d: number){setWeekDays((p)=>p.includes(d)?p.filter((x)=>x!==d):[...p,d]);}
-  function submit(){onSave({type,date:type==="specific"?date:undefined,weekDays:type==="weekly"?weekDays:undefined,startTime,endTime,label:label||(type==="daily"?`Nuit ${startTime}–${endTime}`:type==="weekly"?"Indisponible":date)} as Omit<BlockedSlot,"id">);}
+  function submit(){onSave({type,date:type==="specific"?date:undefined,weekDays:type==="weekly"?weekDays:undefined,startTime,endTime,label:label||(type==="daily"?i18n.t("schedule.night",{start:startTime,end:endTime}):type==="weekly"?i18n.t("interface.unavailable"):date)} as Omit<BlockedSlot,"id">);}
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e)=>e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-bold" style={{ fontFamily:"Onest,sans-serif" }}>{i18n.t("interface.block.a.time.slot")}</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
         <div className="space-y-4">
-          <div><label className="block text-xs font-medium mb-2">{i18n.t("interface.type")}</label><div className="grid grid-cols-3 gap-2">{([["specific","Date précise"],["daily","Tous les jours"],["weekly","Jours semaine"]] as const).map(([v,l])=><button key={v} onClick={()=>setType(v)} className={`py-2 px-3 rounded-lg border text-xs font-medium ${type===v?"border-blue-400 bg-blue-50 text-blue-700":"border-gray-200 text-muted-foreground"}`}>{l}</button>)}</div></div>
+          <div><label className="block text-xs font-medium mb-2">{i18n.t("interface.type")}</label><div className="grid grid-cols-3 gap-2">{(["specific","daily","weekly"] as const).map((v)=><button key={v} onClick={()=>setType(v)} className={`py-2 px-3 rounded-lg border text-xs font-medium ${type===v?"border-blue-400 bg-blue-50 text-blue-700":"border-gray-200 text-muted-foreground"}`}>{i18n.t(`schedule.blockType.${v}`)}</button>)}</div></div>
           {type==="specific"&&<div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.date")}</label><input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>}
           {type==="weekly"&&<div><label className="block text-xs font-medium mb-2">{i18n.t("interface.days")}</label><div className="flex gap-1">{WEEK_DAYS_FR.map((d,i)=><button key={i} onClick={()=>toggleDay(i)} className={`flex-1 py-1.5 rounded-lg border text-xs font-medium ${weekDays.includes(i)?"border-blue-400 bg-blue-50 text-blue-700":"border-gray-200 text-muted-foreground"}`}>{d.slice(0,3)}</button>)}</div></div>}
           <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.start")}</label><input type="time" value={startTime} onChange={(e)=>setStartTime(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div><div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.end")}</label><input type="time" value={endTime} onChange={(e)=>setEndTime(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div></div>
-          <div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.reason.optional")}</label><input placeholder="Formation, travail personnel…" value={label} onChange={(e)=>setLabel(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
+          <div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.reason.optional")}</label><input placeholder={i18n.t("schedule.reasonExample")} value={label} onChange={(e)=>setLabel(e.target.value)} className="w-full h-9 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
           <div className="flex gap-2"><button onClick={submit} className="flex-1 h-10 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90">{i18n.t("interface.block.this.time.slot")}</button><button onClick={onClose} className="h-10 px-4 rounded-xl border border-gray-200 text-sm text-muted-foreground">{i18n.t("interface.cancel")}</button></div>
         </div>
       </div>

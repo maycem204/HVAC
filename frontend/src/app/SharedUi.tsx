@@ -44,7 +44,7 @@ const FAULT_SPECIALIZATION_MAP: Record<string, string[]> = {
 
 export function Avatar({ initials, color, size = "md" }: { initials: string; color: string; size?: "sm" | "md" | "lg" }) {
   const sz = size === "sm" ? "w-8 h-8 text-xs" : size === "lg" ? "w-12 h-12 text-base" : "w-10 h-10 text-sm";
-  if (String(initials || "").startsWith("data:image/")) return <img src={initials} alt="Photo de profil" className={`${sz} rounded-full object-cover shrink-0 border border-white/40`}/>;
+  if (String(initials || "").startsWith("data:image/")) return <img src={initials} alt={i18n.t("interface.profile.photo")} className={`${sz} rounded-full object-cover shrink-0 border border-white/40`}/>;
   return <div className={`${sz} ${color} rounded-full flex items-center justify-center text-white font-bold shrink-0`}>{initials}</div>;
 }
 
@@ -65,9 +65,9 @@ export function resizeProfileImage(file: File): Promise<string> {
       resolve(canvas.toDataURL("image/jpeg", 0.82));
     };
     image.onerror = () => reject(new Error("Format non reconnu. Utilisez une image JPEG, PNG ou WebP."));
-    reader.onerror = () => reject(new Error("Impossible de lire le fichier sélectionné."));
+    reader.onerror = () => reject(new Error(i18n.t("interface.unable.to.read.the.selected.file")));
     reader.onload = () => {
-      if (typeof reader.result !== "string") return reject(new Error("Impossible de lire le fichier sélectionné."));
+      if (typeof reader.result !== "string") return reject(new Error(i18n.t("interface.unable.to.read.the.selected.file")));
       image.src = reader.result;
     };
     reader.readAsDataURL(file);
@@ -81,7 +81,7 @@ export function Badge({ children, color = "blue" }: { children: React.ReactNode;
 
 export function ConfidenceBar({ value }: { value: number }) {
   const color = value >= 75 ? "bg-emerald-500" : value >= 45 ? "bg-amber-500" : "bg-red-400";
-  const label = value >= 75 ? "Élevée" : value >= 45 ? "Moyenne" : "Faible";
+  const label = i18n.t(value >= 75 ? "confidence.high" : value >= 45 ? "confidence.medium" : "confidence.low");
   const tc = value >= 75 ? "text-emerald-600" : value >= 45 ? "text-amber-600" : "text-red-500";
   return (
     <div className="flex items-center gap-2">
@@ -240,24 +240,24 @@ export function ProfileModal({ user, role, onClose, onSave }:
           <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-bold text-foreground" style={{ fontFamily:"Onest,sans-serif" }}>{i18n.t("interface.my.profile")}</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5"/></button></div>
           <div className="flex items-center gap-4 mb-6 p-4 bg-gray-50 rounded-xl">
             <Avatar initials={form.avatar || form.name.split(" ").map((n)=>n[0]).join("").slice(0,2).toUpperCase() || "?"} color={isClient?"bg-blue-500":"bg-emerald-500"} size="lg"/>
-            <div><div className="font-semibold text-foreground">{form.name||"Votre nom"}</div><Badge color={isClient?"blue":"green"}>{isClient?"Client":"Technicien"}</Badge></div>
+            <div><div className="font-semibold text-foreground">{form.name||i18n.t("profile.yourName")}</div><Badge color={isClient?"blue":"green"}>{i18n.t(isClient?"profile.client":"profile.technician")}</Badge></div>
           </div>
           {!isClient&&<div className="mb-5"><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.profile.photo")}</label><label className="h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm inline-flex items-center gap-2 cursor-pointer hover:bg-gray-100"><Upload className="w-4 h-4"/>{i18n.t("interface.choose.a.photo")}<input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event)=>selectPhoto(event.target.files?.[0])}/></label>{photoError&&<div className="text-xs text-red-600 mt-1">{photoError}</div>}</div>}
           <div className="space-y-4">
             <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{i18n.t("interface.personal.information")}</div>
-            <div className="grid grid-cols-2 gap-3">{field("name","Nom complet","text","Votre nom")}{field("email","Email","email","votre@email.com")}{field("phone","Téléphone","tel","+213 6 xx xx xx")}{field("city","Ville ou localisation","text","Alger",true)}</div>
-            {field("address","Adresse","text","Numéro, rue, quartier…")}
+            <div className="grid grid-cols-2 gap-3">{field("name",i18n.t("interface.full.name"),"text",i18n.t("profile.yourName"))}{field("email","Email","email",i18n.t("common.emailPlaceholder"))}{field("phone",i18n.t("interface.phone"),"tel","+213 6 xx xx xx")}{field("city",i18n.t("interface.city.or.location"),"text",i18n.t("profile.cityExample"),true)}</div>
+            {field("address",i18n.t("interface.address"),"text",i18n.t("profile.addressPlaceholder"))}
             {!isClient && (
               <div className="pt-2 space-y-4">
                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{i18n.t("interface.specializations")}</div>
                 <div className="flex flex-wrap gap-2">{ALL_SPECIALIZATIONS.map((s)=><button key={s} onClick={()=>toggleSpec(s)} className={`px-3 py-1.5 rounded-full text-xs border transition-all ${techSpec.includes(s)?"bg-emerald-500 text-white border-emerald-500":"bg-gray-50 text-muted-foreground border-gray-200 hover:border-emerald-300"}`}>{techSpec.includes(s)&&<Check className="w-3 h-3 inline mr-1"/>}{s}</button>)}</div>
                 {techSpec.some((specialization)=>!ALL_SPECIALIZATIONS.includes(specialization))&&<div className="flex flex-wrap gap-2">{techSpec.filter((specialization)=>!ALL_SPECIALIZATIONS.includes(specialization)).map((specialization)=><button type="button" key={specialization} onClick={()=>toggleSpec(specialization)} className="px-3 py-1.5 rounded-full text-xs border border-emerald-500 bg-emerald-500 text-white"><Check className="w-3 h-3 inline mr-1"/>{specialization}<X className="w-3 h-3 inline ml-1"/></button>)}</div>}
-                <div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.add.a.custom.specialization")}</label><div className="flex gap-2"><input value={customSpec} maxLength={80} onChange={(event)=>setCustomSpec(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"){event.preventDefault();addCustomSpec();}}} placeholder="Ex. Réparation de climatiseurs industriels" className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/><button type="button" onClick={addCustomSpec} disabled={!customSpec.trim()} className="h-10 px-3 rounded-lg bg-emerald-500 text-white text-xs font-semibold disabled:opacity-40"><Plus className="w-4 h-4"/></button></div><p className="mt-1 text-[11px] text-muted-foreground">{i18n.t("interface.this.specialization.will.be.used.to.match.relevant.requests")}</p></div>
+                <div><label className="block text-xs font-medium mb-1.5">{i18n.t("interface.add.a.custom.specialization")}</label><div className="flex gap-2"><input value={customSpec} maxLength={80} onChange={(event)=>setCustomSpec(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"){event.preventDefault();addCustomSpec();}}} placeholder={i18n.t("profile.specializationExample")} className="flex-1 h-10 px-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-emerald-400"/><button type="button" onClick={addCustomSpec} disabled={!customSpec.trim()} className="h-10 px-3 rounded-lg bg-emerald-500 text-white text-xs font-semibold disabled:opacity-40"><Plus className="w-4 h-4"/></button></div><p className="mt-1 text-[11px] text-muted-foreground">{i18n.t("interface.this.specialization.will.be.used.to.match.relevant.requests")}</p></div>
                 <div><div className="flex items-center justify-between mb-2"><div className="text-xs font-medium">{i18n.t("interface.service.radius")}</div><span className="text-sm font-bold text-emerald-600">{radius} km</span></div><input type="range" min={2} max={50} value={radius} onChange={(e)=>setRadius(Number(e.target.value))} className="w-full accent-emerald-500"/></div>
               </div>
             )}
           </div>
-          <div className="mt-6">{saved?<div className="flex items-center justify-center gap-2 h-11 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>{i18n.t("interface.profile.saved")}</div>:<button onClick={save} disabled={saving} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-500 hover:bg-emerald-600"}`}><Save className="w-4 h-4"/>{saving?"Enregistrement…":"Enregistrer"}</button>}</div>
+          <div className="mt-6">{saved?<div className="flex items-center justify-center gap-2 h-11 text-emerald-600 font-medium text-sm"><CheckCircle2 className="w-5 h-5"/>{i18n.t("interface.profile.saved")}</div>:<button onClick={save} disabled={saving} className={`w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${isClient?"bg-blue-600 hover:bg-blue-700":"bg-emerald-500 hover:bg-emerald-600"}`}><Save className="w-4 h-4"/>{i18n.t(saving?"profile.saving":"interface.save")}</button>}</div>
         </div>
       </div>
     </div>
