@@ -19,6 +19,7 @@ import type {
   UserLocation, View,
 } from "./domain";
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
+import { useInterfaceLanguage } from "./InterfaceLanguage";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -122,7 +123,13 @@ export function technicianMatchesFault(technician: Technician, faultType: string
 
 export function NotificationPanel({ notifications, onSelect, onReadAll, onClose }:
   { notifications: Notification[]; onSelect: (notification: Notification) => void; onReadAll: () => void; onClose: () => void }) {
+  const { language, text:t } = useInterfaceLanguage();
   const unreadNotifications = notifications.filter((notification)=>!notification.read);
+  const notificationText=(value:string)=>language==="fr"?value:value
+    .replace(/Rendez-vous annulé/gi,"Appointment cancelled")
+    .replace(/Rendez-vous confirmé/gi,"Appointment confirmed")
+    .replace(/Le client a annulé le rendez-vous du/gi,"The customer cancelled the appointment on")
+    .replace(/Nouveau lead/gi,"New lead").replace(/Nouvel avis client/gi,"New customer review");
   const icons: Record<string, { el: React.ReactNode; cls: string }> = {
     lead: { el:<Tag className="w-3.5 h-3.5"/>, cls:"bg-blue-100 text-blue-600" },
     rdv: { el:<Calendar className="w-3.5 h-3.5"/>, cls:"bg-emerald-100 text-emerald-600" },
@@ -136,19 +143,19 @@ export function NotificationPanel({ notifications, onSelect, onReadAll, onClose 
     <div className="fixed inset-0 z-50" onClick={onClose}>
       <div className="absolute top-14 right-4 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden" onClick={(e)=>e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div><div className="font-semibold text-sm text-foreground">Notifications</div><div className="text-xs text-muted-foreground">{unreadNotifications.length} non lues</div></div>
-          <div className="flex items-center gap-2"><button onClick={onReadAll} className="text-xs text-primary hover:underline">Tout marquer lu</button><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4"/></button></div>
+          <div><div className="font-semibold text-sm text-foreground">Notifications</div><div className="text-xs text-muted-foreground">{unreadNotifications.length} {t(unreadNotifications.length>1?"non lues":"non lue","unread")}</div></div>
+          <div className="flex items-center gap-2"><button onClick={onReadAll} className="text-xs text-primary hover:underline">{t("Tout marquer lu","Mark all as read")}</button><button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4"/></button></div>
         </div>
         <div className="max-h-96 overflow-y-auto">
-          {unreadNotifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">Aucune nouvelle notification</div>
+          {unreadNotifications.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">{t("Aucune nouvelle notification","No new notifications")}</div>
           : unreadNotifications.map((n) => {
             const ni = icons[n.type];
             return (
               <button key={n.id} onClick={()=>onSelect(n)} className={`w-full text-left px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 flex items-start gap-3 ${!n.read?"bg-blue-50/30":""}`}>
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ni?.cls}`}>{ni?.el}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2"><div className={`text-sm text-foreground ${!n.read?"font-semibold":""}`}>{n.title}</div>{!n.read&&<span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1"/>}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</div>
+                  <div className="flex items-start justify-between gap-2"><div data-language-neutral="true" className={`text-sm text-foreground ${!n.read?"font-semibold":""}`}>{notificationText(n.title)}</div>{!n.read&&<span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1"/>}</div>
+                  <div data-language-neutral="true" className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{notificationText(n.message)}</div>
                   <div className="text-xs text-muted-foreground/60 mt-1">{n.time}</div>
                 </div>
               </button>
