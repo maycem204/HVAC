@@ -437,5 +437,20 @@
   "interface.every.day": "Every day",
   "interface.view.rating.details": "View rating details",
   "interface.no.reviews": "No reviews",
-  "interface.hvac.technician": "HVAC technician"
+  "interface.hvac.technician": "HVAC technician",
+  "business.airConditioning": "Air conditioning",
+  "business.repair": "Repair",
+  "business.heating": "Heating",
+  "business.refrigeration": "Refrigeration",
+  "business.heatPump": "Heat pump",
+  "business.installation": "Installation",
+  "business.maintenance": "Maintenance",
+  "business.high": "High",
+  "business.medium": "Medium",
+  "business.low": "Low",
+  "business.tunisia": "Tunisia",
+  "business.standard": "Standard",
+  "business.urgent": "Urgent",
+  "business.highWinterHeatingSeason": "High winter season (heating)",
+  "business.airConditioningDiagnostic": "Air-conditioning diagnostics"
 }

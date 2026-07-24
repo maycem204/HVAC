@@ -510,14 +510,14 @@ function ClientRdv({ technicians, appointments, setAppointments }:
 
 function ClientMap({ technicians, location, contactedTechs, onContact }:
   { technicians: Technician[]; location: UserLocation|null; contactedTechs: number[]; onContact: (id:number)=>void }) {
-  const { language, text:t } = useInterfaceLanguage();
+  const { language, text:tr } = useInterfaceLanguage();
   const specialtyLabel=(value:string)=>language==="fr"?value:value
-    .replace(/Climatisation/g,t("specialties.airConditioning"))
-    .replace(/Réparation/g,t("specialties.repair"))
-    .replace(/Chauffage/g,t("specialties.heating"))
-    .replace(/Réfrigération/g,t("specialties.refrigeration"))
-    .replace(/Pompe à chaleur/g,t("specialties.heatPump"))
-    .replace(/Entretien/g,t("specialties.maintenance"));
+    .replace(/Climatisation/g,tr("specialties.airConditioning"))
+    .replace(/Réparation/g,tr("specialties.repair"))
+    .replace(/Chauffage/g,tr("specialties.heating"))
+    .replace(/Réfrigération/g,tr("specialties.refrigeration"))
+    .replace(/Pompe à chaleur/g,tr("specialties.heatPump"))
+    .replace(/Entretien/g,tr("specialties.maintenance"));
   const [selected, setSelected] = useState<number|null>(null);
   const [search, setSearch] = useState("");
   const [filterSpec, setFilterSpec] = useState<string|null>(null);
@@ -564,12 +564,12 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
     <div className="h-full flex flex-col md:flex-row overflow-hidden">
       <div className="relative z-[1100] w-full max-h-[55vh] md:max-h-none md:w-80 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col shadow-sm md:shadow-none">
         <div className="p-3 border-b border-border space-y-2">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder={t("interface.name.or.specialization")} className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder={tr("interface.name.or.specialization")} className="w-full h-9 pl-9 pr-3 rounded-lg border border-gray-200 text-sm bg-gray-50 focus:outline-none focus:border-blue-400"/></div>
           <div className="flex gap-1.5 flex-wrap">
-            <button onClick={()=>setShowAvailOnly(!showAvailOnly)} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${showAvailOnly?"bg-emerald-500 text-white border-emerald-500":"border-gray-200 text-muted-foreground"}`}><span className={`w-1.5 h-1.5 rounded-full ${showAvailOnly?"bg-white":"bg-emerald-400"}`}/>{t("interface.available.2")}</button>
+            <button onClick={()=>setShowAvailOnly(!showAvailOnly)} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${showAvailOnly?"bg-emerald-500 text-white border-emerald-500":"border-gray-200 text-muted-foreground"}`}><span className={`w-1.5 h-1.5 rounded-full ${showAvailOnly?"bg-white":"bg-emerald-400"}`}/>{tr("interface.available.2")}</button>
             {["Climatisation","Chauffage","Installation","Réparation"].map((spec)=><button key={spec} onClick={()=>setFilterSpec(filterSpec===spec?null:spec)} className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${filterSpec===spec?"bg-primary text-white border-primary":"border-gray-200 text-muted-foreground"}`}>{specialtyLabel(spec)}</button>)}
           </div>
-          {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{t("map.techniciansFrom",{count:filtered.length,city:location.city})}</div>}
+          {location&&<div className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-1.5"><Navigation className="w-3 h-3"/>{tr("map.techniciansFrom",{count:filtered.length,city:location.city})}</div>}
         </div>
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {filtered.map((t)=>{
@@ -589,7 +589,7 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between"><span className="font-semibold text-sm">{t.name}</span><span className="text-xs font-medium text-blue-600">{t.distanceKm == null ? i18n.t("interface.distance.unavailable") : `${t.distanceKm.toFixed(1)} km`}</span></div>
                       <div className="flex flex-wrap gap-1 mt-1">{t.specializations.slice(0,2).map((s)=><span key={s} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{specialtyLabel(s)}</span>)}</div>
-                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className={`w-3 h-3 ${aggregateReviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span className="text-xs font-medium">{aggregateReviews>0?aggregateRating:"—"}</span><span className="text-xs text-muted-foreground">({t("interface.customer.reviews",{count:aggregateReviews})})</span></div><Badge color={isBlocked?"red":t.available?"green":"gray"}>{isBlocked?t("interface.blocked"):t.available?t("interface.available"):t("interface.unavailable")}</Badge>{isContacted&&<Badge color="blue">{t("interface.contacted")}</Badge>}</div>
+                      <div className="flex items-center gap-2 mt-1.5"><div className="flex items-center gap-0.5"><Star className={`w-3 h-3 ${aggregateReviews>0?"text-amber-400 fill-amber-400":"text-gray-300"}`}/><span className="text-xs font-medium">{aggregateReviews>0?aggregateRating:"—"}</span><span className="text-xs text-muted-foreground">({tr("interface.customer.reviews",{count:aggregateReviews})})</span></div><Badge color={isBlocked?"red":t.available?"green":"gray"}>{isBlocked?tr("interface.blocked"):t.available?tr("interface.available"):tr("interface.unavailable")}</Badge>{isContacted&&<Badge color="blue">{tr("interface.contacted")}</Badge>}</div>
                     </div>
                   </div>
                 </button>
@@ -621,9 +621,9 @@ function ClientMap({ technicians, location, contactedTechs, onContact }:
       <div className="z-0 flex-1 min-h-[420px] relative overflow-hidden isolate">
         <TechnicianMap technicians={filtered.map((technician)=>({...technician,canRate:technician.canRate||contactedTechs.includes(technician.id)}))} location={location} selectedId={selected} onSelect={selectTechnician} onContact={onContact} onRate={(id)=>{const technician=technicians.find((item)=>item.id===id);setSelected(id);setRatingTech(id);setRatingDraft({rating:technician?.myRating||0,comment:technician?.myRatingComment||""});}}/>
         <div className="absolute z-[1000] bottom-4 right-4 bg-white/95 backdrop-blur rounded-xl p-3 shadow-sm border border-gray-100 text-xs space-y-1.5 pointer-events-none">
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">{t("interface.available")}</span></div>
-          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">{t("interface.contacted")}</span></div>
-          <div className="font-medium text-foreground pt-1 border-t border-gray-100">{t("interface.available.technicians",{count:technicians.filter((item)=>item.available).length})}</div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-400 border border-white shadow-sm"/><span className="text-muted-foreground">{tr("interface.available")}</span></div>
+          <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-blue-400 border border-white shadow-sm"/><span className="text-muted-foreground">{tr("interface.contacted")}</span></div>
+          <div className="font-medium text-foreground pt-1 border-t border-gray-100">{tr("interface.available.technicians",{count:technicians.filter((item)=>item.available).length})}</div>
         </div>
       </div>
     </div>

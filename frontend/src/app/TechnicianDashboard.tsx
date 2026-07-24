@@ -21,7 +21,7 @@ import type {
   UserLocation, View, WorkingHour,
 } from "./domain";
 import { mapAppointment, mapBlockedSlot, mapLead, mapNotification, mapTechnician } from "./mappers";
-import { Avatar, Badge, ConfidenceBar, NotificationPanel, ProfileModal } from "./SharedUi";
+import { Avatar, Badge, ConfidenceBar, NotificationPanel, ProfileModal, translateBusinessValue } from "./SharedUi";
 import { useInterfaceLanguage } from "./InterfaceLanguage";
 import i18n from "../i18n";
 
@@ -152,8 +152,8 @@ function LeadDetails({ lead }: { lead: Lead }) {
   return (
     <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 p-4 text-xs space-y-4">
       <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
-        <div><span className="text-muted-foreground">{i18n.t("interface.request")} :</span> {lead.problem}</div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.category")} :</span> {lead.faultType}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.request")} :</span> {translateBusinessValue(lead.problem)}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.category")} :</span> {translateBusinessValue(lead.faultType)}</div>
         <div><span className="text-muted-foreground">{i18n.t("interface.time.slot")} :</span> {lead.requestedDate?`${String(lead.requestedDate).slice(0,10)} ${i18n.t("interface.at")} ${String(lead.requestedTime||"").slice(0,5)}`:i18n.t("interface.to.be.defined")}</div>
         <div><span className="text-muted-foreground">{i18n.t("interface.address")} :</span> {lead.address||lead.city||i18n.t("interface.not.provided")}</div>
         <div><span className="text-muted-foreground">{i18n.t("interface.estimate")} :</span> <strong>{lead.price.toLocaleString(i18n.resolvedLanguage==="en"?"en-GB":"fr-FR")} {lead.currency}</strong></div>
@@ -161,18 +161,18 @@ function LeadDetails({ lead }: { lead: Lead }) {
       </div>
       {lead.caseDescription&&<div className="rounded-lg border border-blue-100 bg-white p-3"><div className="font-semibold text-slate-700 mb-1">{i18n.t("interface.description.provided.by.the.customer")}</div><p className="whitespace-pre-line leading-relaxed text-slate-600">{lead.caseDescription}</p></div>}
       {details&&<div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        <div><span className="text-muted-foreground">{i18n.t("interface.urgency")} :</span> {details.urgency||i18n.t("interface.not.specified")}</div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.complexity")} :</span> {details.complexity||i18n.t("interface.not.specified")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.urgency")} :</span> {details.urgency?translateBusinessValue(details.urgency):i18n.t("interface.not.specified")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.complexity")} :</span> {details.complexity?translateBusinessValue(details.complexity):i18n.t("interface.not.specified")}</div>
         <div><span className="text-muted-foreground">{i18n.t("interface.brand")} :</span> {details.brand||i18n.t("interface.not.provided")}</div>
         <div><span className="text-muted-foreground">{i18n.t("interface.equipment.age")} :</span> {age||i18n.t("interface.not.provided")}</div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.country")} :</span> {details.country||i18n.t("interface.not.specified")}</div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.seasonal.context")} :</span> {details.season||i18n.t("interface.not.specified")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.country")} :</span> {details.country?translateBusinessValue(details.country):i18n.t("interface.not.specified")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.seasonal.context")} :</span> {details.season?translateBusinessValue(details.season):i18n.t("interface.not.specified")}</div>
       </div>}
       {faults.length>0&&<div className="space-y-2"><div className="font-semibold text-slate-700">{i18n.t("interface.analyzed.issue.details")}</div>{faults.map((fault,index)=><div key={index} className="rounded-lg border border-slate-200 bg-white p-3 grid sm:grid-cols-2 gap-2">
         <div className="sm:col-span-2"><span className="text-muted-foreground">{i18n.t("interface.symptom.issue")} :</span> <strong>{fault.description||i18n.t("interface.not.specified")}</strong></div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.equipment")} :</span> {fault.equipment_type||i18n.t("interface.not.specified")}</div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.scheduled.service")} :</span> {fault.intervention_type||i18n.t("interface.needs.diagnosis")}</div>
-        <div><span className="text-muted-foreground">{i18n.t("interface.complexity")} :</span> {fault.complexity||details?.complexity||i18n.t("interface.not.specified")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.equipment")} :</span> {fault.equipment_type?translateBusinessValue(fault.equipment_type):i18n.t("interface.not.specified")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.scheduled.service")} :</span> {fault.intervention_type?translateBusinessValue(fault.intervention_type):i18n.t("interface.needs.diagnosis")}</div>
+        <div><span className="text-muted-foreground">{i18n.t("interface.complexity")} :</span> {fault.complexity?translateBusinessValue(fault.complexity):details?.complexity?translateBusinessValue(details.complexity):i18n.t("interface.not.specified")}</div>
         <div><span className="text-muted-foreground">{i18n.t("interface.reference")} :</span> {fault.code_hint||i18n.t("interface.unassigned")}</div>
         {fault.complexity_reason&&<div className="sm:col-span-2"><span className="text-muted-foreground">{i18n.t("interface.reasoning")} :</span> {fault.complexity_reason}</div>}
       </div>)}</div>}
@@ -243,8 +243,8 @@ function TechLeads() {
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-bold shrink-0">{lead.client[0]}</div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{lead.faultType}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price.toLocaleString(i18n.resolvedLanguage==="en"?"en-GB":"fr-FR")} {lead.currency}</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
-              <div className="mt-2 text-sm">{lead.problem}</div>
+              <div className="flex items-start justify-between gap-2"><div><div className="font-semibold text-sm">{lead.client}</div><div className="flex items-center gap-2 mt-0.5"><span className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3"/>{lead.city}</span><span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">{translateBusinessValue(lead.faultType)}</span></div></div><div className="text-right"><div className="text-lg font-black" style={{ fontFamily:"Onest,sans-serif" }}>{lead.price.toLocaleString(i18n.resolvedLanguage==="en"?"en-GB":"fr-FR")} {lead.currency}</div><div className="text-xs text-muted-foreground">{lead.time}</div></div></div>
+              <div className="mt-2 text-sm">{translateBusinessValue(lead.problem)}</div>
               {lead.requestedDate&&<div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5"/>{String(lead.requestedDate).slice(0,10)} {i18n.t("interface.at")} {String(lead.requestedTime||"").slice(0,5)}</span>{lead.address&&<span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5"/>{lead.address}</span>}</div>}
               <div className="mt-2"><div className="text-xs text-muted-foreground mb-1">{i18n.t("interface.ai.confidence")}</div><ConfidenceBar value={lead.confidence}/></div>
               <button onClick={()=>setExpanded(expanded===lead.id?null:lead.id)} className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1">{i18n.t(expanded===lead.id?"interface.hide.details":"leads.viewAllInformation")}<ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded===lead.id?"rotate-180":""}`}/></button>

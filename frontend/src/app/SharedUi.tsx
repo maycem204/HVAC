@@ -40,6 +40,34 @@ const FAULT_SPECIALIZATION_MAP: Record<string, string[]> = {
   "Installation": ["Installation", "Multi-split"],
 };
 
+export function translateBusinessValue(value: unknown): string {
+  const source = String(value ?? "").trim();
+  if (!source) return source;
+
+  const translations: Record<string, string> = {
+    "Climatisation": "business.airConditioning",
+    "Réparation": "business.repair",
+    "Chauffage": "business.heating",
+    "Réfrigération": "business.refrigeration",
+    "Pompe à chaleur": "business.heatPump",
+    "Installation": "business.installation",
+    "Maintenance": "business.maintenance",
+    "Élevée": "business.high",
+    "Élevé": "business.high",
+    "Moyenne": "business.medium",
+    "Moyen": "business.medium",
+    "Faible": "business.low",
+    "Tunisie": "business.tunisia",
+    "Standard": "business.standard",
+    "Urgent": "business.urgent",
+    "Haute saison hiver (chauffage)": "business.highWinterHeatingSeason",
+    "Diagnostic Climatisation": "business.airConditioningDiagnostic",
+  };
+
+  const key = translations[source];
+  return key ? i18n.t(key) : source;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function Avatar({ initials, color, size = "md" }: { initials: string; color: string; size?: "sm" | "md" | "lg" }) {
